@@ -202,6 +202,9 @@ const buildSunburstData = () => {
 
 const updateChart = async () => {
   if (!chartInstance) return;
+  if (store.focusedNodeId && (store.activeFilters.years.length > 0 || store.activeFilters.taxonomy)) {
+    return;
+  }
   const data = buildSunburstData();
   await nextTick();
   if (!hasData.value) return;

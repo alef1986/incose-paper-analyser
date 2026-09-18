@@ -148,4 +148,89 @@ export class Graph {
             links: Array.from(subLinksSet).map(l => ({ ...l }))
         };
     }
+
+    getFilteredGlobalNetwork(filteredCoreNodes, store, vizSettings) {
+        const subNodesMap = new Map();
+        const subLinksSet = new Set();
+        
+        const coreIdsSet = new Set(filteredCoreNodes.map(n => n.id));
+        
+        const passesFilters = (n, isStartingCore = false) => {
+            if (!n) return false;
+            if (isStartingCore) return true; // Starting core nodes are always allowed
+            
+            if (store) {
+                if (!store.displayFilters[n.type]) return false;
+                const nodeIssns = n.issns || [];
+                const hasTracked = nodeIssns.some(i => store.trackedIssns.includes(i));
+                const hasSelected = nodeIssns.some(i => store.selectedISSNs.includes(i));
+                if (hasTracked && !hasSelected) return false;
+            }
+            
+            if (vizSettings) {
+                if (n.type === 'incose_source' && !vizSettings.showCore) return false;
+                if (n.type === 'assimilated_canon' && !vizSettings.showCanon) return false;
+                if (n.type === 'external_or_unknown' && !vizSettings.showEnv) return false;
+                if (n.type === 'irrelevant') return false; 
+            }
+            
+            return true;
+        }
+
+        const depthLimit = vizSettings ? vizSettings.depth : 1;
+        const direction = vizSettings ? vizSettings.direction : 'both';
+        
+        // Initialize queue with all filtered core nodes at depth 0
+        let queue = filteredCoreNodes.map(n => ({ id: n.id, d: 0 }));
+        let visited = new Set(filteredCoreNodes.map(n => n.id));
+        
+        while (queue.length > 0) {
+            let curr = queue.shift();
+            let nodeObj = this.nodes.get(curr.id);
+            
+            if (nodeObj && passesFilters(nodeObj, coreIdsSet.has(curr.id))) {
+                subNodesMap.set(curr.id, nodeObj);
+            }
+            
+            if (curr.d < depthLimit) {
+                let adjLinks = this.adjacencyList.get(curr.id) || [];
+                for (let l of adjLinks) {
+                    let s = typeof l.source === 'object' ? l.source.id : l.source;
+                    let t = typeof l.target === 'object' ? l.target.id : l.target;
+                    
+                    let neighborId = null;
+                    
+                    if (direction === 'both') {
+                        neighborId = (s === curr.id) ? t : s;
+                    } else if (direction === 'out' && s === curr.id) {
+                        neighborId = t;
+                    } else if (direction === 'in' && t === curr.id) {
+                        neighborId = s;
+                    }
+
+                    if (neighborId && !visited.has(neighborId)) {
+                        visited.add(neighborId);
+                        queue.push({ id: neighborId, d: curr.d + 1 });
+                    }
+                }
+            }
+        }
+        
+        // Keep links where both source and target are in the subNodesMap
+        subNodesMap.forEach((_, nId) => {
+            const adj = this.adjacencyList.get(nId) || [];
+            adj.forEach(l => {
+                const s = typeof l.source === 'object' ? l.source.id : l.source;
+                const t = typeof l.target === 'object' ? l.target.id : l.target;
+                if (subNodesMap.has(s) && subNodesMap.has(t)) {
+                    subLinksSet.add(l);
+                }
+            });
+        });
+        
+        return {
+            nodes: Array.from(subNodesMap.values()).map(n => ({ ...n })),
+            links: Array.from(subLinksSet).map(l => ({ ...l }))
+        };
+    }
 }

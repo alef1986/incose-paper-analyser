@@ -6,7 +6,7 @@
     <MetricsPanel />
     <NodeInfoModal /> <!-- Внедряем меню поверх графа -->
     
-    <div id="empty-state" v-if="!store.focusedNodeId">
+    <div id="empty-state" v-if="!store.focusedNodeId && !store.isLoaded">
       Upload JSON and select a node from the right panel to build its cluster (Radius = 1).
     </div>
   </div>
