@@ -28,7 +28,9 @@ export const useGraphStore = defineStore('graph', {
     topNodes: [],
     
     focusedNodeId: null,
-    isVizActive: true,
+    isVizActive: false,
+    activeNodeIds: new Set(),
+    citationFrequencyFilter: false,
 
     vizSettings: {
       enableTooltip: true,
@@ -72,6 +74,7 @@ export const useGraphStore = defineStore('graph', {
       try {
         this.graphModel = markRaw(parseIncoseJson(rawJsonData))
         this.isLoaded = true
+        this.isVizActive = false
         this.recalculateMetrics()
       } catch (err) {
         console.error("Parse error:", err)
@@ -83,6 +86,7 @@ export const useGraphStore = defineStore('graph', {
       if (!this.graphModel) return
       const dynamicInDegree = new Map()
       const activeCoreNodes = new Set()
+      const coreOutDegree = new Map()
       
       // ФИКС 2: Инициализируем объект для подсчета ISSN
       const tempIssnCounts = {} 
@@ -100,18 +104,74 @@ export const useGraphStore = defineStore('graph', {
           const hasSelected = nodeIssns.some(i => this.selectedISSNs.includes(i))
           if (hasTracked && !hasSelected) return 
           activeCoreNodes.add(n.id)
-        } else {
-          activeCoreNodes.add(n.id) 
+          coreOutDegree.set(n.id, 0)
         }
       })
 
-      let activeEdgesCount = 0
+      let originalEdgesCount = 0
       this.graphModel.links.forEach(l => {
         const sId = typeof l.source === 'object' ? l.source.id : l.source
         const tId = typeof l.target === 'object' ? l.target.id : l.target
         if (activeCoreNodes.has(sId)) {
           dynamicInDegree.set(tId, (dynamicInDegree.get(tId) || 0) + 1)
+          coreOutDegree.set(sId, (coreOutDegree.get(sId) || 0) + 1)
+          const tNode = this.graphModel.nodes.get(tId)
+          if (tNode && tNode.type !== 'irrelevant') {
+            originalEdgesCount++
+          }
+        }
+      })
+
+      // Сначала посчитаем исходные (original) метрики до применения Citation Frequency фильтра
+      let originalCore = 0, originalCanon = 0, originalEnv = 0
+      this.graphModel.nodes.forEach(n => {
+        const inCount = dynamicInDegree.get(n.id) || 0
+        if (n.type === 'incose_source') {
+          if (activeCoreNodes.has(n.id)) originalCore++
+        } else {
+          if (inCount > 0) {
+            if (n.type === 'assimilated_canon') originalCanon++
+            else if (n.type !== 'irrelevant') originalEnv++
+          }
+        }
+      })
+
+      // Теперь формируем набор финально активных узлов
+      const finalActiveNodes = new Set()
+      this.graphModel.nodes.forEach(n => {
+        if (n.type === 'irrelevant') return
+
+        if (n.type === 'incose_source') {
+          if (!activeCoreNodes.has(n.id)) return
+          if (this.citationFrequencyFilter) {
+            const outCount = coreOutDegree.get(n.id) || 0
+            if (outCount <= 1) return
+          }
+          finalActiveNodes.add(n.id)
+        } else {
+          const inCount = dynamicInDegree.get(n.id) || 0
+          if (inCount === 0) return
+          if (this.citationFrequencyFilter) {
+            if (inCount <= 1) return
+          }
+          finalActiveNodes.add(n.id)
+        }
+      })
+
+      this.activeNodeIds = finalActiveNodes
+
+      // Пересчитаем inDegree и связи на основе отфильтрованных активных узлов
+      let activeEdgesCount = 0
+      const finalInDegree = new Map()
+
+      this.graphModel.links.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source
+        const tId = typeof l.target === 'object' ? l.target.id : l.target
+        if (finalActiveNodes.has(sId) && finalActiveNodes.has(tId)) {
           activeEdgesCount++
+          if (this.graphModel.nodes.get(sId)?.type === 'incose_source') {
+            finalInDegree.set(tId, (finalInDegree.get(tId) || 0) + 1)
+          }
         }
       })
 
@@ -119,22 +179,32 @@ export const useGraphStore = defineStore('graph', {
       const activeNodesArr = []
 
       this.graphModel.nodes.forEach(n => {
-        n.inDegree = dynamicInDegree.get(n.id) || 0
-        if (n.type === 'incose_source' && !activeCoreNodes.has(n.id)) return
-        if (n.type !== 'incose_source' && n.inDegree === 0) return 
-
-        if (n.type === 'incose_source') core++
-        else if (n.type === 'assimilated_canon') canon++
-        else if (n.type === 'irrelevant') irrelevant++
-        else env++
-
-        if (n.type !== 'irrelevant') activeNodesArr.push(n)
+        if (finalActiveNodes.has(n.id)) {
+          n.inDegree = finalInDegree.get(n.id) || 0
+          if (n.type === 'incose_source') core++
+          else if (n.type === 'assimilated_canon') canon++
+          else env++
+          activeNodesArr.push(n)
+        } else {
+          n.inDegree = 0
+          if (n.type === 'irrelevant') irrelevant++
+        }
       })
 
       this.metrics = { 
-        totalNodes: activeNodesArr.length, totalEdges: activeEdgesCount, 
-        coreCount: core, canonCount: canon, envCount: env, irrelevantCount: irrelevant,
-        issnCounts: tempIssnCounts // ФИКС 4: Сохраняем подсчитанные ISSN в метрики
+        totalNodes: activeNodesArr.length, 
+        totalEdges: activeEdgesCount, 
+        coreCount: core, 
+        canonCount: canon, 
+        envCount: env, 
+        irrelevantCount: irrelevant,
+        issnCounts: tempIssnCounts,
+        originalCoreCount: originalCore,
+        originalCanonCount: originalCanon,
+        originalEnvCount: originalEnv,
+        originalTotalNodes: originalCore + originalCanon + originalEnv,
+        originalTotalEdges: originalEdgesCount,
+        isCitationFilterActive: this.citationFrequencyFilter
       }
       this.topNodes = activeNodesArr.sort((a, b) => b.inDegree - a.inDegree).slice(0, 300)
     },
@@ -217,7 +287,10 @@ export const useGraphStore = defineStore('graph', {
 
     filteredCoreNodes(state) {
       if (!state.graphModel) return [];
-      const allCore = Array.from(state.graphModel.nodes.values()).filter(n => n.type === 'incose_source');
+      let allCore = Array.from(state.graphModel.nodes.values()).filter(n => n.type === 'incose_source');
+      if (state.citationFrequencyFilter) {
+        allCore = allCore.filter(node => state.activeNodeIds.has(node.id));
+      }
       
       // ОПТИМИЗАЦИЯ O(1): Собираем целевые узлы таксономии один раз
       let validTargetIds = null;

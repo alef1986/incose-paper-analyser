@@ -1,6 +1,6 @@
 <template>
   <div class="ego-panel" id="left-panel">
-    <h2 class="panel-heading">Ego-Network Visualiser</h2>
+    <h2 class="panel-heading">Graph Settings</h2>
 
     <!-- Загрузка и сохранение -->
     <div class="control-group">
@@ -10,24 +10,18 @@
       <button v-if="store.isLoaded" class="btn success-btn" @click="exportJSON">Save edited JSON</button>
     </div>
 
-    <!-- System Metrics -->
+    <!-- Advanced Analysis -->
     <div v-if="store.isLoaded" class="analytics-section">
-      <h3 class="section-title collapsible-header" @click="isSystemMetricsOpen = !isSystemMetricsOpen">
-        System Metrics
-        <span class="toggle-icon">{{ isSystemMetricsOpen ? '▼' : '▶' }}</span>
+      <h3 class="section-title collapsible-header" @click="isAdvancedAnalysisOpen = !isAdvancedAnalysisOpen">
+        Advanced Analysis
+        <span class="toggle-icon">{{ isAdvancedAnalysisOpen ? '▼' : '▶' }}</span>
       </h3>
       
-      <div v-show="isSystemMetricsOpen" class="collapsible-content">
-        <div class="flex-row" style="margin-bottom: 10px;">
-          <div class="metric-card"><div class="metric-title">Total Nodes</div><div class="metric-value">{{ store.metrics.totalNodes }}</div></div>
-          <div class="metric-card"><div class="metric-title">Total Edges</div><div class="metric-value">{{ store.metrics.totalEdges }}</div></div>
-        </div>
-        
-        <div class="flex-row">
-          <div class="metric-card core-border"><div class="metric-title">Core</div><div class="metric-value">{{ store.metrics.coreCount }}</div></div>
-          <div class="metric-card canon-border"><div class="metric-title">Canon</div><div class="metric-value canon-text">{{ store.metrics.canonCount }}</div></div>
-          <div class="metric-card env-border"><div class="metric-title">Env</div><div class="metric-value env-text">{{ store.metrics.envCount }}</div></div>
-        </div>
+      <div v-show="isAdvancedAnalysisOpen" class="collapsible-content">
+        <label class="setting-item checkbox-label">
+          <input type="checkbox" v-model="store.citationFrequencyFilter" @change="store.recalculateMetrics" />
+          Citation Frequency
+        </label>
       </div>
     </div>
 
@@ -129,6 +123,62 @@
     <!-- Компонент диаграммы -->
     <SunburstChart v-if="store.isLoaded" />
 
+    <!-- System Metrics -->
+    <div v-if="store.isLoaded" class="analytics-section">
+      <h3 class="section-title collapsible-header" @click="isSystemMetricsOpen = !isSystemMetricsOpen">
+        System Metrics
+        <span class="toggle-icon">{{ isSystemMetricsOpen ? '▼' : '▶' }}</span>
+      </h3>
+      
+      <div v-show="isSystemMetricsOpen" class="collapsible-content">
+        <div class="flex-row" style="margin-bottom: 10px;">
+          <div class="metric-card">
+            <div class="metric-title">Total Nodes</div>
+            <div class="metric-value-container" v-if="store.metrics.isCitationFilterActive">
+              <span class="original-strikethrough">{{ store.metrics.originalTotalNodes }}</span>
+              <span class="new-metric-value core-text">{{ store.metrics.totalNodes }}</span>
+            </div>
+            <div class="metric-value" v-else>{{ store.metrics.totalNodes }}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">Total Edges</div>
+            <div class="metric-value-container" v-if="store.metrics.isCitationFilterActive">
+              <span class="original-strikethrough">{{ store.metrics.originalTotalEdges }}</span>
+              <span class="new-metric-value core-text">{{ store.metrics.totalEdges }}</span>
+            </div>
+            <div class="metric-value" v-else>{{ store.metrics.totalEdges }}</div>
+          </div>
+        </div>
+        
+        <div class="flex-row">
+          <div class="metric-card core-border">
+            <div class="metric-title">Core</div>
+            <div class="metric-value-container" v-if="store.metrics.isCitationFilterActive">
+              <span class="original-strikethrough">{{ store.metrics.originalCoreCount }}</span>
+              <span class="new-metric-value core-text">{{ store.metrics.coreCount }}</span>
+            </div>
+            <div class="metric-value" v-else>{{ store.metrics.coreCount }}</div>
+          </div>
+          <div class="metric-card canon-border">
+            <div class="metric-title">Canon</div>
+            <div class="metric-value-container" v-if="store.metrics.isCitationFilterActive">
+              <span class="original-strikethrough">{{ store.metrics.originalCanonCount }}</span>
+              <span class="new-metric-value canon-text">{{ store.metrics.canonCount }}</span>
+            </div>
+            <div class="metric-value canon-text" v-else>{{ store.metrics.canonCount }}</div>
+          </div>
+          <div class="metric-card env-border">
+            <div class="metric-title">Env</div>
+            <div class="metric-value-container" v-if="store.metrics.isCitationFilterActive">
+              <span class="original-strikethrough">{{ store.metrics.originalEnvCount }}</span>
+              <span class="new-metric-value env-text">{{ store.metrics.envCount }}</span>
+            </div>
+            <div class="metric-value env-text" v-else>{{ store.metrics.envCount }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -142,6 +192,7 @@ const selectedYears = ref([])
 
 // Состояния раскрывающихся панелей (по умолчанию свернуты)
 const isSystemMetricsOpen = ref(true)
+const isAdvancedAnalysisOpen = ref(false)
 const isVizSettingsOpen = ref(false)
 const isTemporalFilterOpen = ref(false)
 const isDedupOpen = ref(false)
@@ -293,4 +344,21 @@ const runDeduplication = (type) => {
 .metric-value { font-size: 20px; font-weight: bold; color: #00bfff; }
 .core-border { border-bottom: 2px solid #00bfff; } .canon-border { border-bottom: 2px solid #5cb85c; } .env-border { border-bottom: 2px solid #555566; }
 .core-text { color: #00bfff; } .canon-text { color: #5cb85c; } .env-text { color: #aaa; } .irr-text { color: #d9534f; }
+
+.metric-value-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.original-strikethrough {
+  font-size: 13px;
+  text-decoration: line-through;
+  color: #888;
+  opacity: 0.7;
+}
+.new-metric-value {
+  font-size: 20px;
+  font-weight: bold;
+}
 </style>

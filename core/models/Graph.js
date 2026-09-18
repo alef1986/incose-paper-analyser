@@ -74,6 +74,7 @@ export class Graph {
             if (isCenter) return true; 
             
             if (activeFilters) {
+                if (activeFilters.citationFrequencyFilter && !activeFilters.activeNodeIds.has(n.id)) return false;
                 if (!activeFilters.displayFilters[n.type]) return false;
                 const nodeIssns = n.issns || [];
                 const hasTracked = nodeIssns.some(i => activeFilters.trackedIssns.includes(i));
@@ -160,6 +161,7 @@ export class Graph {
             if (isStartingCore) return true; // Starting core nodes are always allowed
             
             if (store) {
+                if (store.citationFrequencyFilter && !store.activeNodeIds.has(n.id)) return false;
                 if (!store.displayFilters[n.type]) return false;
                 const nodeIssns = n.issns || [];
                 const hasTracked = nodeIssns.some(i => store.trackedIssns.includes(i));
