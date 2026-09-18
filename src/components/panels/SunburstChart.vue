@@ -81,7 +81,7 @@ const buildSunburstData = () => {
     const tNode = store.graphModel.nodes.get(tId)
     
     if (sNode && sNode.type === 'incose_source' && tNode && tNode.type !== 'incose_source' && tNode.type !== 'irrelevant') {
-      if (store.citationFrequencyFilter) {
+      if (store.citationFrequencyFilter || store.uniqueAuthorsFilter) {
         if (store.activeNodeIds && (!store.activeNodeIds.has(sId) || !store.activeNodeIds.has(tId))) return;
       }
       const activeYears = store.activeFilters.years;
@@ -272,7 +272,9 @@ const updateChart = async () => {
 watch([
   () => store.metrics, 
   () => store.activeFilters.years, 
-  () => store.activeFilters.taxonomy
+  () => store.activeFilters.taxonomy,
+  () => store.citationFrequencyFilter,
+  () => store.uniqueAuthorsFilter
 ], () => { updateChart() }, { deep: true })
 
 watch(() => store.mainView, async () => {

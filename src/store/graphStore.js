@@ -11,6 +11,16 @@ export const issnMap = {
   "2334-5837": "INCOSE Int. Symp."
 }
 
+function getAuthorSet(authorsStr) {
+  if (!authorsStr || typeof authorsStr !== 'string') return new Set()
+  return new Set(
+    authorsStr
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s && s !== 'unknown' && s !== 'anonymous')
+  )
+}
+
 export const useGraphStore = defineStore('graph', {
   state: () => ({
     activeFilters: {
@@ -31,6 +41,7 @@ export const useGraphStore = defineStore('graph', {
     isVizActive: false,
     activeNodeIds: new Set(),
     citationFrequencyFilter: false,
+    uniqueAuthorsFilter: false,
 
     vizSettings: {
       enableTooltip: true,
@@ -108,6 +119,7 @@ export const useGraphStore = defineStore('graph', {
         }
       })
 
+      const targetCitingCoreNodes = new Map()
       let originalEdgesCount = 0
       this.graphModel.links.forEach(l => {
         const sId = typeof l.source === 'object' ? l.source.id : l.source
@@ -115,6 +127,15 @@ export const useGraphStore = defineStore('graph', {
         if (activeCoreNodes.has(sId)) {
           dynamicInDegree.set(tId, (dynamicInDegree.get(tId) || 0) + 1)
           coreOutDegree.set(sId, (coreOutDegree.get(sId) || 0) + 1)
+          
+          const sNode = this.graphModel.nodes.get(sId)
+          if (sNode) {
+            if (!targetCitingCoreNodes.has(tId)) {
+              targetCitingCoreNodes.set(tId, [])
+            }
+            targetCitingCoreNodes.get(tId).push(sNode)
+          }
+
           const tNode = this.graphModel.nodes.get(tId)
           if (tNode && tNode.type !== 'irrelevant') {
             originalEdgesCount++
@@ -153,6 +174,27 @@ export const useGraphStore = defineStore('graph', {
           if (inCount === 0) return
           if (this.citationFrequencyFilter) {
             if (inCount <= 1) return
+          }
+          if (this.uniqueAuthorsFilter) {
+            const citingCoreNodes = targetCitingCoreNodes.get(n.id) || []
+            if (citingCoreNodes.length <= 1) return
+
+            const seenAuthors = new Set()
+            let hasRepeatingAuthor = false
+            for (const coreNode of citingCoreNodes) {
+              const authorsSet = getAuthorSet(coreNode.authors)
+              for (const author of authorsSet) {
+                if (seenAuthors.has(author)) {
+                  hasRepeatingAuthor = true
+                  break
+                }
+              }
+              if (hasRepeatingAuthor) break
+              for (const author of authorsSet) {
+                seenAuthors.add(author)
+              }
+            }
+            if (hasRepeatingAuthor) return
           }
           finalActiveNodes.add(n.id)
         }
@@ -204,7 +246,7 @@ export const useGraphStore = defineStore('graph', {
         originalEnvCount: originalEnv,
         originalTotalNodes: originalCore + originalCanon + originalEnv,
         originalTotalEdges: originalEdgesCount,
-        isCitationFilterActive: this.citationFrequencyFilter
+        isCitationFilterActive: this.citationFrequencyFilter || this.uniqueAuthorsFilter
       }
       this.topNodes = activeNodesArr.sort((a, b) => b.inDegree - a.inDegree).slice(0, 300)
     },

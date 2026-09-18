@@ -21,6 +21,12 @@
         <label class="setting-item checkbox-label">
           <input type="checkbox" v-model="store.citationFrequencyFilter" @change="store.recalculateMetrics" />
           Citation Frequency
+          <span class="help-icon" title="Keeps only core nodes that cite 2+ papers, and canon/environment nodes cited by 2+ core papers.">?</span>
+        </label>
+        <label class="setting-item checkbox-label">
+          <input type="checkbox" v-model="store.uniqueAuthorsFilter" @change="store.recalculateMetrics" />
+          Unique Authors
+          <span class="help-icon" title="Keeps only canon and environment nodes cited by more than one core node where no core nodes share any authors.">?</span>
         </label>
       </div>
     </div>
@@ -316,6 +322,27 @@ const runDeduplication = (type) => {
 .dedup-controls { display: flex; flex-direction: column; gap: 10px; }
 .dedup-actions { display: flex; gap: 10px; }
 .dedup-actions .btn { flex: 1; }
+
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #2a2a3a;
+  color: #aaa;
+  font-size: 10px;
+  cursor: help;
+  margin-left: 6px;
+  border: 1px solid #555;
+  user-select: none;
+}
+.help-icon:hover {
+  background: #3a3a4a;
+  color: #fff;
+  border-color: #00bfff;
+}
 
 .year-filter-container {
   max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.2); 
