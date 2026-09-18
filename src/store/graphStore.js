@@ -184,6 +184,13 @@ export const useGraphStore = defineStore('graph', {
   },
   
   getters: {
+    inspectedNodes(state) {
+      if (!state.graphModel) return []
+      return state.inspectedNodeIds.map(id => state.graphModel.nodes.get(id)).filter(Boolean)
+    },
+    isBatchMode(state) {
+      return state.inspectedNodeIds.length > 1
+    },
     // ФИКС 5: Геттер availableYears добавлен и обрабатывает поле "year"
     availableYears(state) {
       if (!state.graphModel) return [];

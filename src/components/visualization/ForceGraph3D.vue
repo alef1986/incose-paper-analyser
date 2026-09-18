@@ -153,7 +153,12 @@ watch(() => store.mainView, async (newVal) => {
   }
 })
 
-watch([() => store.focusedNodeId, () => store.vizSettings], ([newId]) => {
+watch([
+  () => store.focusedNodeId, 
+  () => store.vizSettings,
+  () => store.selectedISSNs,
+  () => store.displayFilters
+], ([newId]) => {
   if (!newId || !store.graphModel) return
   if (!Graph) initGraph()
   const egoData = store.graphModel.getEgoNetwork(newId, store, store.vizSettings)

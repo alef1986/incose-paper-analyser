@@ -24,10 +24,10 @@
 
         <label class="setting-item">
           <span class="s-label">Link Direction:</span>
-          <select v-model="store.vizSettings.linkDirection" class="s-select">
+          <select v-model="store.vizSettings.direction" class="s-select">
             <option value="both">Both (In & Out)</option>
-            <option value="inbound">Inbound (Cites Focal)</option>
-            <option value="outbound">Outbound (Focal Cites)</option>
+            <option value="in">Inbound (Cites Focal)</option>
+            <option value="out">Outbound (Focal Cites)</option>
           </select>
         </label>
 
@@ -45,7 +45,7 @@
           <div class="checkbox-group">
             <label><input type="checkbox" v-model="store.vizSettings.showCore" /> Core</label>
             <label><input type="checkbox" v-model="store.vizSettings.showCanon" /> Canon</label>
-            <label><input type="checkbox" v-model="store.vizSettings.showTarget" /> Env</label>
+            <label><input type="checkbox" v-model="store.vizSettings.showEnv" /> Env</label>
           </div>
         </div>
       </div>
@@ -85,15 +85,21 @@
       
       <div v-show="isDedupOpen" class="collapsible-content">
         <div class="dedup-controls">
-          <select v-model="selectedISSN" class="s-select w-100">
-            <option value="">Select ISSN Filters ({{ sortedIssns.length }}) &nabla;</option>
-            <option v-for="i in sortedIssns" :key="i" :value="i">
-               {{ getIssnLabel(i) }} ({{ getIssnCount(i) }})
-            </option>
-          </select>
+          <span class="s-label">Filter ISSNs:</span>
+          <div class="custom-dropdown w-100">
+            <div class="dropdown-trigger s-select" @click="isIssnDropdownOpen = !isIssnDropdownOpen">
+              Select ISSNs ({{ store.selectedISSNs.length }} selected) <span class="arrow">{{ isIssnDropdownOpen ? '▲' : '▼' }}</span>
+            </div>
+            <div v-show="isIssnDropdownOpen" class="dropdown-menu">
+              <label v-for="i in sortedIssns" :key="i" class="dropdown-item">
+                <input type="checkbox" :value="i" v-model="store.selectedISSNs" @change="store.recalculateMetrics" />
+                <span class="issn-label-text">{{ getIssnLabel(i) }} ({{ getIssnCount(i) }})</span>
+              </label>
+            </div>
+          </div>
           <div class="dedup-actions">
-            <button class="btn info-btn" @click="runDeduplication('exact')" :disabled="!selectedISSN">1:1 Exact Match</button>
-            <button class="btn warning-btn" @click="runDeduplication('smart')" :disabled="!selectedISSN">Smart Match (>80%)</button>
+            <button class="btn info-btn" @click="runDeduplication('exact')" :disabled="store.selectedISSNs.length === 0">1:1 Exact Match</button>
+            <button class="btn warning-btn" @click="runDeduplication('smart')" :disabled="store.selectedISSNs.length === 0">Smart Match (>80%)</button>
           </div>
         </div>
       </div>
@@ -111,13 +117,13 @@ import { useGraphStore, issnMap } from '../../store/graphStore.js'
 import SunburstChart from './SunburstChart.vue'
 
 const store = useGraphStore()
-const selectedISSN = ref('')
 const selectedYears = ref([])
 
 // Состояния раскрывающихся панелей (по умолчанию свернуты)
 const isVizSettingsOpen = ref(false)
 const isTemporalFilterOpen = ref(false)
 const isDedupOpen = ref(false)
+const isIssnDropdownOpen = ref(false)
 
 const onFileSelected = (e) => {
   const file = e.target.files[0]
@@ -200,7 +206,7 @@ const sortedIssns = computed(() => {
 })
 
 const runDeduplication = (type) => {
-  alert(`Deduplication [${type}] for ${selectedISSN.value} is not fully implemented in this demo.`)
+  alert(`Deduplication [${type}] is not fully implemented in this demo.`)
 }
 </script>
 
@@ -245,4 +251,15 @@ const runDeduplication = (type) => {
 .year-checkbox { font-size: 11px; color: #ccc; display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .filter-hint { font-size: 10px; color: #00bfff; margin-top: 4px; font-style: italic; }
 .empty-state { font-size: 11px; color: #888; font-style: italic; }
+
+/* Custom Dropdown Styles */
+.custom-dropdown { position: relative; display: inline-block; }
+.dropdown-trigger { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
+.dropdown-menu { position: absolute; top: 100%; left: 0; width: 100%; max-height: 180px; overflow-y: auto; background: #0a0a14; border: 1px solid #444; border-radius: 4px; z-index: 100; margin-top: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); padding: 5px; box-sizing: border-box; }
+.dropdown-menu::-webkit-scrollbar { width: 4px; }
+.dropdown-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+.dropdown-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 11px; color: #ccc; cursor: pointer; border-radius: 3px; }
+.dropdown-item:hover { background: rgba(0, 191, 255, 0.15); color: #fff; }
+.dropdown-item input { cursor: pointer; }
+.issn-label-text { font-size: 11px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 </style>

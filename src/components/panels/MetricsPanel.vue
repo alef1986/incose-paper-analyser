@@ -87,7 +87,10 @@ const filteredTopNodes = computed(() => {
     if (!store.displayFilters[n.type]) return false;
     
     // 2. Проверка ISSN
-    if (store.trackedIssns.includes(n.issn) && !store.selectedISSNs.includes(n.issn)) return false;
+    const nodeIssns = n.issns || [];
+    const hasTracked = nodeIssns.some(i => store.trackedIssns.includes(i));
+    const hasSelected = nodeIssns.some(i => store.selectedISSNs.includes(i));
+    if (hasTracked && !hasSelected) return false;
     
     // 3. ФИКС: Проверка принадлежности к отфильтрованному подграфу
     // Оставляем узел ядра ТОЛЬКО если он прошел фильтр годов и диаграммы
@@ -121,13 +124,6 @@ watch(() => store.focusedNodeId, async (newId) => {
 const handleNodeClick = (nodeId) => {
   // ФИКС: Только фокусируем узел, больше никакого автоматического вызова окна
   store.setFocusedNode(nodeId)
-}
-
-// ЭКШЕН ДЛЯ КНОПКИ
-const openEditModal = () => {
-  if (store.focusedNodeId) {
-    store.openModal(store.focusedNodeId)
-  }
 }
 </script>
 

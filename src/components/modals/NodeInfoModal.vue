@@ -285,7 +285,7 @@ const fetchTitleFromOpenAlex = async () => {
     } else {
       alert(`API Error: ${res.status}`)
     }
-  } catch (e) { alert("Failed to fetch data.") } finally { isFetchingTitle.value = false }
+  } catch { alert("Failed to fetch data.") } finally { isFetchingTitle.value = false }
 }
 
 const acceptProposedTitle = () => { 
@@ -366,7 +366,7 @@ const runBatchFetch = async () => {
           }
         });
       } else failed += chunk.length; 
-    } catch (e) { failed += chunk.length; }
+    } catch { failed += chunk.length; }
     
     await new Promise(resolve => setTimeout(resolve, 200)); 
   }

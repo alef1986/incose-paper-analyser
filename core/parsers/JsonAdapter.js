@@ -4,8 +4,8 @@ import { Node, Link, Graph } from '../models/Graph.js'
 export function parseIncoseJson(rawData) {
     const graph = new Graph()
     
-    let rawNodes = []
-    let rawLinks = []
+    let rawNodes
+    let rawLinks
 
     const isRawArray = Array.isArray(rawData);
 
