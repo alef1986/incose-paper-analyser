@@ -76,7 +76,13 @@ const getNodeColor = (node) => {
 
 const initGraph = () => {
   if (!graphContainer.value) return
+  const parent = graphContainer.value.parentElement
+  const width = parent ? parent.clientWidth : window.innerWidth - 710
+  const height = parent ? parent.clientHeight : window.innerHeight
+
   Graph = ForceGraph3D()(graphContainer.value)
+    .width(width)
+    .height(height)
     .nodeColor(getNodeColor)
     .nodeVal(node => node.id === store.focusedNodeId ? node.nodeSize * 1.5 : node.nodeSize)
     .nodeOpacity(0.9)
@@ -101,6 +107,17 @@ const initGraph = () => {
   Graph.d3Force('charge').strength(-30)
   window.addEventListener('resize', handleWindowResize)
   window.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY })
+
+  setTimeout(() => {
+    if (Graph) {
+      Graph.zoomToFit(400, 150)
+      const controls = Graph.controls()
+      if (controls) {
+        if (typeof controls.handleResize === 'function') controls.handleResize()
+        if (typeof controls.update === 'function') controls.update()
+      }
+    }
+  }, 150)
 }
 
 const handleWindowResize = () => {
@@ -108,7 +125,14 @@ const handleWindowResize = () => {
   if (store.mainView !== 'sunburst') {
     // Читаем реальные физические размеры новой панели
     const parent = graphContainer.value.parentElement
-    Graph.width(parent.clientWidth).height(parent.clientHeight)
+    if (parent) {
+      Graph.width(parent.clientWidth).height(parent.clientHeight)
+      const controls = Graph.controls()
+      if (controls) {
+        if (typeof controls.handleResize === 'function') controls.handleResize()
+        if (typeof controls.update === 'function') controls.update()
+      }
+    }
   }
 }
 
@@ -131,8 +155,15 @@ watch(() => store.mainView, async (newVal) => {
     pipSyncInterval = setInterval(syncPipPosition, 16) 
     setTimeout(() => {
       const target = document.getElementById('pip-target')
-      if (target && Graph) Graph.width(target.clientWidth).height(target.clientHeight)
-    }, 50)
+      if (target && Graph) {
+        Graph.width(target.clientWidth).height(target.clientHeight)
+        const controls = Graph.controls()
+        if (controls) {
+          if (typeof controls.handleResize === 'function') controls.handleResize()
+          if (typeof controls.update === 'function') controls.update()
+        }
+      }
+    }, 100)
   } else {
     // Возвращаем полноэкранный режим 3D-графа
     if (pipSyncInterval) clearInterval(pipSyncInterval)
@@ -147,9 +178,18 @@ watch(() => store.mainView, async (newVal) => {
       if (Graph && graphContainer.value) {
         // Читаем размеры из новой центральной панели
         const parent = graphContainer.value.parentElement
-        if (parent) Graph.width(parent.clientWidth).height(parent.clientHeight)
+        if (parent) {
+          Graph.width(parent.clientWidth).height(parent.clientHeight)
+          const controls = Graph.controls()
+          if (controls) {
+            if (typeof controls.handleResize === 'function') controls.handleResize()
+            if (typeof controls.update === 'function') controls.update()
+          }
+          // Восстанавливаем позиционирование и центрирование графа
+          Graph.zoomToFit(400, 150)
+        }
       }
-    }, 50)
+    }, 100)
   }
 })
 
@@ -164,6 +204,18 @@ watch([
   const egoData = store.graphModel.getEgoNetwork(newId, store, store.vizSettings)
   Graph.graphData(egoData)
   Graph.nodeColor(Graph.nodeColor())
+
+  // Центрируем камеру при изменении фокусного узла или настроек графа
+  setTimeout(() => {
+    if (Graph) {
+      Graph.zoomToFit(400, 150)
+      const controls = Graph.controls()
+      if (controls) {
+        if (typeof controls.handleResize === 'function') controls.handleResize()
+        if (typeof controls.update === 'function') controls.update()
+      }
+    }
+  }, 150)
 }, { deep: true })
 
 watch(() => store.isVizActive, (isActive) => {
