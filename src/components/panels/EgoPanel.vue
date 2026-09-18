@@ -28,6 +28,54 @@
           Unique Authors
           <span class="help-icon" title="Keeps only canon and environment nodes cited by more than one core node where no core nodes share any authors.">?</span>
         </label>
+
+        <div class="setting-group" style="padding-top: 5px; margin-top: 5px;">
+          <label class="setting-item checkbox-label">
+            <input type="checkbox" v-model="store.activeYearsFilterActive" @change="store.recalculateMetrics" />
+            Active Years Count
+            <span class="help-icon" title="Keeps only canon and environment nodes that are cited by core nodes from at least X different publication years.">?</span>
+          </label>
+          <div v-show="store.activeYearsFilterActive" class="slider-container" style="padding-left: 20px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #aaa;">
+              <span>Years: <b>{{ store.activeYearsCount }}</b></span>
+              <span>Max: {{ store.observationDuration }}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button 
+                class="btn info-btn" 
+                style="padding: 2px 8px; font-size: 10px; min-width: 28px; height: 20px; display: flex; align-items: center; justify-content: center;"
+                @click="toggleActiveYearsPlay"
+              >
+                {{ isActiveYearsPlaying ? '◼' : '▶' }}
+              </button>
+              <input type="range" v-model.number="store.activeYearsCount" min="1" :max="store.observationDuration || 1" @input="store.recalculateMetrics" style="flex: 1; cursor: pointer;" />
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-group" style="padding-top: 5px; margin-top: 5px;">
+          <label class="setting-item checkbox-label">
+            <input type="checkbox" v-model="store.lifespanFilterActive" @change="store.recalculateMetrics" />
+            Lifespan
+            <span class="help-icon" title="Keeps only environment nodes where the difference between the first citing core paper year and the last citing core paper year is at least X years.">?</span>
+          </label>
+          <div v-show="store.lifespanFilterActive" class="slider-container" style="padding-left: 20px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #aaa;">
+              <span>Span: <b>{{ store.lifespanCount }}</b> year(s)</span>
+              <span>Max: {{ store.observationDuration }}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button 
+                class="btn info-btn" 
+                style="padding: 2px 8px; font-size: 10px; min-width: 28px; height: 20px; display: flex; align-items: center; justify-content: center;"
+                @click="toggleLifespanPlay"
+              >
+                {{ isLifespanPlaying ? '◼' : '▶' }}
+              </button>
+              <input type="range" v-model.number="store.lifespanCount" min="1" :max="store.observationDuration || 1" @input="store.recalculateMetrics" style="flex: 1; cursor: pointer;" />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -189,7 +237,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useGraphStore, issnMap } from '../../store/graphStore.js'
 import SunburstChart from './SunburstChart.vue'
 
@@ -203,6 +251,68 @@ const isVizSettingsOpen = ref(false)
 const isTemporalFilterOpen = ref(false)
 const isDedupOpen = ref(false)
 const isIssnDropdownOpen = ref(false)
+
+// Анимация бегунков (Play/Stop)
+const isActiveYearsPlaying = ref(false)
+let activeYearsIntervalId = null
+
+const toggleActiveYearsPlay = () => {
+  if (isActiveYearsPlaying.value) {
+    clearInterval(activeYearsIntervalId)
+    isActiveYearsPlaying.value = false
+  } else {
+    isActiveYearsPlaying.value = true
+    activeYearsIntervalId = setInterval(() => {
+      const maxVal = store.observationDuration || 1
+      if (store.activeYearsCount >= maxVal) {
+        store.activeYearsCount = 1
+      } else {
+        store.activeYearsCount++
+      }
+      store.recalculateMetrics()
+    }, 500)
+  }
+}
+
+const isLifespanPlaying = ref(false)
+let lifespanIntervalId = null
+
+const toggleLifespanPlay = () => {
+  if (isLifespanPlaying.value) {
+    clearInterval(lifespanIntervalId)
+    isLifespanPlaying.value = false
+  } else {
+    isLifespanPlaying.value = true
+    lifespanIntervalId = setInterval(() => {
+      const maxVal = store.observationDuration || 1
+      if (store.lifespanCount >= maxVal) {
+        store.lifespanCount = 1
+      } else {
+        store.lifespanCount++
+      }
+      store.recalculateMetrics()
+    }, 500)
+  }
+}
+
+watch(() => store.activeYearsFilterActive, (active) => {
+  if (!active && isActiveYearsPlaying.value) {
+    clearInterval(activeYearsIntervalId)
+    isActiveYearsPlaying.value = false
+  }
+})
+
+watch(() => store.lifespanFilterActive, (active) => {
+  if (!active && isLifespanPlaying.value) {
+    clearInterval(lifespanIntervalId)
+    isLifespanPlaying.value = false
+  }
+})
+
+onBeforeUnmount(() => {
+  if (activeYearsIntervalId) clearInterval(activeYearsIntervalId)
+  if (lifespanIntervalId) clearInterval(lifespanIntervalId)
+})
 
 const onFileSelected = (e) => {
   const file = e.target.files[0]

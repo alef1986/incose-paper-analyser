@@ -25,20 +25,29 @@
     
     <SearchPanel />
 
-    <div class="metric-card top-list-container">
-      <div class="metric-title">Top Hubs (Filtered)</div>
-      <ul class="top-list">
-        <li 
-          v-for="node in unifiedDisplayList" 
-          :key="node.id" 
-          :id="'list-node-' + node.id"
-          :class="{ 'is-focused': store.focusedNodeId === node.id }"
-          @click="handleNodeClick(node.id)"
-        >
-          <span :style="{ color: getTextColor(node.type) }">{{ truncateTitle(node.title) }}</span>
-          <span class="badge">{{ node.inDegree }}</span>
-        </li>
-      </ul>
+    <!-- Top Hubs Collapsible Panel -->
+    <div class="analytics-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+      <h3 class="section-title collapsible-header" @click="isTopHubsOpen = !isTopHubsOpen">
+        Top Hubs (Filtered)
+        <span class="toggle-icon">{{ isTopHubsOpen ? '▼' : '▶' }}</span>
+      </h3>
+      
+      <div v-show="isTopHubsOpen" class="collapsible-content" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 10px;">
+        <div class="metric-card top-list-container" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0; margin-top: 5px;">
+          <ul class="top-list" style="flex: 1; overflow-y: auto;">
+            <li 
+              v-for="node in unifiedDisplayList" 
+              :key="node.id" 
+              :id="'list-node-' + node.id"
+              :class="{ 'is-focused': store.focusedNodeId === node.id }"
+              @click="handleNodeClick(node.id)"
+            >
+              <span :style="{ color: getTextColor(node.type) }">{{ truncateTitle(node.title) }}</span>
+              <span class="badge">{{ node.inDegree }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
 
     <!-- КНОПКА РЕДАКТИРОВАНИЯ -->
@@ -64,6 +73,7 @@ import DiffusionPanel from './DiffusionPanel.vue'
 
 const store = useGraphStore()
 const isFilterCategoriesOpen = ref(false)
+const isTopHubsOpen = ref(true)
 
 const getTextColor = (type) => {
   if (type === 'incose_source') return '#00bfff'

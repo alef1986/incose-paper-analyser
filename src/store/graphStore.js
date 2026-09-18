@@ -42,6 +42,10 @@ export const useGraphStore = defineStore('graph', {
     activeNodeIds: new Set(),
     citationFrequencyFilter: false,
     uniqueAuthorsFilter: false,
+    activeYearsFilterActive: false,
+    activeYearsCount: 1,
+    lifespanFilterActive: false,
+    lifespanCount: 1,
 
     vizSettings: {
       enableTooltip: true,
@@ -196,6 +200,38 @@ export const useGraphStore = defineStore('graph', {
             }
             if (hasRepeatingAuthor) return
           }
+          if (this.activeYearsFilterActive) {
+            const citingCoreNodes = targetCitingCoreNodes.get(n.id) || []
+            const citingYears = new Set()
+            for (const coreNode of citingCoreNodes) {
+              const yRaw = coreNode.year || coreNode.publicationYear
+              if (yRaw) {
+                const y = parseInt(yRaw, 10)
+                if (!isNaN(y)) {
+                  citingYears.add(y)
+                }
+              }
+            }
+            if (citingYears.size < this.activeYearsCount) return
+          }
+          if (this.lifespanFilterActive && n.type !== 'assimilated_canon') {
+            const citingCoreNodes = targetCitingCoreNodes.get(n.id) || []
+            let minYear = Infinity
+            let maxYear = -Infinity
+            for (const coreNode of citingCoreNodes) {
+              const yRaw = coreNode.year || coreNode.publicationYear
+              if (yRaw) {
+                const y = parseInt(yRaw, 10)
+                if (!isNaN(y)) {
+                  if (y < minYear) minYear = y
+                  if (y > maxYear) maxYear = y
+                }
+              }
+            }
+            if (minYear === Infinity || maxYear === -Infinity) return
+            const lifespan = maxYear - minYear
+            if (lifespan < this.lifespanCount) return
+          }
           finalActiveNodes.add(n.id)
         }
       })
@@ -246,7 +282,7 @@ export const useGraphStore = defineStore('graph', {
         originalEnvCount: originalEnv,
         originalTotalNodes: originalCore + originalCanon + originalEnv,
         originalTotalEdges: originalEdgesCount,
-        isCitationFilterActive: this.citationFrequencyFilter || this.uniqueAuthorsFilter
+        isCitationFilterActive: this.citationFrequencyFilter || this.uniqueAuthorsFilter || this.activeYearsFilterActive || this.lifespanFilterActive
       }
       this.topNodes = activeNodesArr.sort((a, b) => b.inDegree - a.inDegree).slice(0, 300)
     },
@@ -309,6 +345,26 @@ export const useGraphStore = defineStore('graph', {
     isBatchMode(state) {
       return state.inspectedNodeIds.length > 1
     },
+    observationDuration(state) {
+      if (!state.graphModel) return 0;
+      let minYear = Infinity;
+      let maxYear = -Infinity;
+      state.graphModel.nodes.forEach(n => {
+        if (n.type === 'incose_source') {
+          const yRaw = n.year || n.publicationYear;
+          if (yRaw) {
+            const y = parseInt(yRaw, 10);
+            if (!isNaN(y) && y > 1900 && y <= new Date().getFullYear()) {
+              if (y < minYear) minYear = y;
+              if (y > maxYear) maxYear = y;
+            }
+          }
+        }
+      });
+      if (minYear === Infinity || maxYear === -Infinity) return 0;
+      return maxYear - minYear;
+    },
+
     // ФИКС 5: Геттер availableYears добавлен и обрабатывает поле "year"
     availableYears(state) {
       if (!state.graphModel) return [];
