@@ -5,8 +5,8 @@
       class="graph-container"
       :class="{ 'is-minimised': store.mainView === 'sunburst' }"
       :style="{ 
-        opacity: store.isVizActive ? 1 : 0, 
-        visibility: store.isVizActive ? 'visible' : 'hidden',
+        opacity: (store.isVizActive && store.focusedNodeId) ? 1 : 0, 
+        visibility: (store.isVizActive && store.focusedNodeId) ? 'visible' : 'hidden',
         top: pipStyles.top,
         left: pipStyles.left,
         width: pipStyles.width,
@@ -15,7 +15,7 @@
     ></div>
 
     <!-- НОВАЯ ЛЕГЕНДА: Показывается только в развернутом виде -->
-    <div class="viewport-legend" v-if="store.mainView === 'graph' && store.graphModel">
+    <div class="viewport-legend" v-if="store.mainView === 'graph' && store.graphModel && store.focusedNodeId">
       <h4 class="legend-title">Graph Taxonomy</h4>
       <div class="legend-item"><span class="color-dot incose"></span> Core (INCOSE)</div>
       <div class="legend-item"><span class="color-dot canon"></span> Assimilated Canon</div>
@@ -199,7 +199,13 @@ watch([
   () => store.selectedISSNs,
   () => store.displayFilters
 ], ([newId]) => {
-  if (!newId || !store.graphModel) return
+  if (!newId) {
+    if (Graph) {
+      Graph.graphData({ nodes: [], links: [] })
+    }
+    return
+  }
+  if (!store.graphModel) return
   if (!Graph) initGraph()
   const egoData = store.graphModel.getEgoNetwork(newId, store, store.vizSettings)
   Graph.graphData(egoData)

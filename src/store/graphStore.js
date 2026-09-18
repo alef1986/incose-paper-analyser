@@ -139,7 +139,13 @@ export const useGraphStore = defineStore('graph', {
       this.topNodes = activeNodesArr.sort((a, b) => b.inDegree - a.inDegree).slice(0, 300)
     },
 
-    setFocusedNode(nodeId) { this.focusedNodeId = nodeId },
+    setFocusedNode(nodeId) {
+      if (this.focusedNodeId === nodeId) {
+        this.focusedNodeId = null
+      } else {
+        this.focusedNodeId = nodeId
+      }
+    },
     toggleViz() { this.isVizActive = !this.isVizActive },
     
     openModal(nodeIds) {
