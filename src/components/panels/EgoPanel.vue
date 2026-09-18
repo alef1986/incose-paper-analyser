@@ -10,6 +10,27 @@
       <button v-if="store.isLoaded" class="btn success-btn" @click="exportJSON">Save edited JSON</button>
     </div>
 
+    <!-- System Metrics -->
+    <div v-if="store.isLoaded" class="analytics-section">
+      <h3 class="section-title collapsible-header" @click="isSystemMetricsOpen = !isSystemMetricsOpen">
+        System Metrics
+        <span class="toggle-icon">{{ isSystemMetricsOpen ? '▼' : '▶' }}</span>
+      </h3>
+      
+      <div v-show="isSystemMetricsOpen" class="collapsible-content">
+        <div class="flex-row" style="margin-bottom: 10px;">
+          <div class="metric-card"><div class="metric-title">Total Nodes</div><div class="metric-value">{{ store.metrics.totalNodes }}</div></div>
+          <div class="metric-card"><div class="metric-title">Total Edges</div><div class="metric-value">{{ store.metrics.totalEdges }}</div></div>
+        </div>
+        
+        <div class="flex-row">
+          <div class="metric-card core-border"><div class="metric-title">Core</div><div class="metric-value">{{ store.metrics.coreCount }}</div></div>
+          <div class="metric-card canon-border"><div class="metric-title">Canon</div><div class="metric-value canon-text">{{ store.metrics.canonCount }}</div></div>
+          <div class="metric-card env-border"><div class="metric-title">Env</div><div class="metric-value env-text">{{ store.metrics.envCount }}</div></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Настройки Визуализатора -->
     <div v-if="store.isLoaded" class="analytics-section">
       <h3 class="section-title collapsible-header" @click="isVizSettingsOpen = !isVizSettingsOpen">
@@ -120,6 +141,7 @@ const store = useGraphStore()
 const selectedYears = ref([])
 
 // Состояния раскрывающихся панелей (по умолчанию свернуты)
+const isSystemMetricsOpen = ref(true)
 const isVizSettingsOpen = ref(false)
 const isTemporalFilterOpen = ref(false)
 const isDedupOpen = ref(false)
@@ -262,4 +284,13 @@ const runDeduplication = (type) => {
 .dropdown-item:hover { background: rgba(0, 191, 255, 0.15); color: #fff; }
 .dropdown-item input { cursor: pointer; }
 .issn-label-text { font-size: 11px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+
+/* System Metrics styles added */
+.flex-row { display: flex; gap: 8px; flex-shrink: 0; }
+.flex-row .metric-card { flex: 1; padding: 10px 5px; }
+.metric-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 12px; border-radius: 6px; margin-bottom: 12px; text-align: center; flex-shrink: 0; }
+.metric-title { font-size: 10px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; }
+.metric-value { font-size: 20px; font-weight: bold; color: #00bfff; }
+.core-border { border-bottom: 2px solid #00bfff; } .canon-border { border-bottom: 2px solid #5cb85c; } .env-border { border-bottom: 2px solid #555566; }
+.core-text { color: #00bfff; } .canon-text { color: #5cb85c; } .env-text { color: #aaa; } .irr-text { color: #d9534f; }
 </style>

@@ -211,13 +211,13 @@ const initGraph = () => {
           const isSourceExcluded = sourceNode ? isExcludedByFilter(sourceNode) : false
           const isTargetExcluded = targetNode ? isExcludedByFilter(targetNode) : false
           if (isSourceExcluded || isTargetExcluded) {
-            return 0.1
+            return 0.03
           } else {
-            return 0.9
+            return 0.8
           }
         }
       }
-      return 0.7
+      return 0.4
     })            
     .linkWidth(link => {
       if (store.focusedNodeId) {
@@ -232,13 +232,13 @@ const initGraph = () => {
           const isSourceExcluded = sourceNode ? isExcludedByFilter(sourceNode) : false
           const isTargetExcluded = targetNode ? isExcludedByFilter(targetNode) : false
           if (isSourceExcluded || isTargetExcluded) {
-            return 0.4
+            return 0.1
           } else {
-            return 1.8
+            return 0.6
           }
         }
       }
-      return 1.2
+      return 0.4
     })                
     .linkDirectionalArrowLength(3.5)
     .linkDirectionalArrowRelPos(1)

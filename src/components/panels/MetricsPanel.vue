@@ -4,26 +4,22 @@
     <!-- ИНТЕГРАЦИЯ: Анализ диффузии знаний -->
     <DiffusionPanel />
 
-    <h2>System Metrics</h2>
-    
-    <div class="flex-row" style="margin-bottom: 10px;">
-      <div class="metric-card"><div class="metric-title">Total Nodes</div><div class="metric-value">{{ store.metrics.totalNodes }}</div></div>
-      <div class="metric-card"><div class="metric-title">Total Edges</div><div class="metric-value">{{ store.metrics.totalEdges }}</div></div>
-    </div>
-    
-    <div class="flex-row">
-      <div class="metric-card core-border"><div class="metric-title">Core</div><div class="metric-value">{{ store.metrics.coreCount }}</div></div>
-      <div class="metric-card canon-border"><div class="metric-title">Canon</div><div class="metric-value canon-text">{{ store.metrics.canonCount }}</div></div>
-      <div class="metric-card env-border"><div class="metric-title">Env</div><div class="metric-value env-text">{{ store.metrics.envCount }}</div></div>
-    </div>
-
-    <div class="metric-card filter-container">
-      <div class="metric-title">Filter Display List</div>
-      <div class="filter-toggles">
-        <label class="f-toggle core-text"><input type="checkbox" v-model="store.displayFilters.incose_source"> Core</label>
-        <label class="f-toggle canon-text"><input type="checkbox" v-model="store.displayFilters.assimilated_canon"> Canon</label>
-        <label class="f-toggle env-text"><input type="checkbox" v-model="store.displayFilters.external_or_unknown"> Env</label>
-        <label class="f-toggle irr-text"><input type="checkbox" v-model="store.displayFilters.irrelevant"> Not Rel</label>
+    <!-- Filter Categories -->
+    <div class="analytics-section">
+      <h3 class="section-title collapsible-header" @click="isFilterCategoriesOpen = !isFilterCategoriesOpen">
+        Filter Categories
+        <span class="toggle-icon">{{ isFilterCategoriesOpen ? '▼' : '▶' }}</span>
+      </h3>
+      
+      <div v-show="isFilterCategoriesOpen" class="collapsible-content">
+        <div class="metric-card filter-container" style="margin-top: 10px; margin-bottom: 0;">
+          <div class="filter-toggles">
+            <label class="f-toggle core-text"><input type="checkbox" v-model="store.displayFilters.incose_source"> Core</label>
+            <label class="f-toggle canon-text"><input type="checkbox" v-model="store.displayFilters.assimilated_canon"> Canon</label>
+            <label class="f-toggle env-text"><input type="checkbox" v-model="store.displayFilters.external_or_unknown"> Env</label>
+            <label class="f-toggle irr-text"><input type="checkbox" v-model="store.displayFilters.irrelevant"> Not Rel</label>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -61,12 +57,13 @@
 </template>
 
 <script setup>
-import { computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useGraphStore } from '../../store/graphStore.js'
 import SearchPanel from './SearchPanel.vue'
 import DiffusionPanel from './DiffusionPanel.vue'
 
 const store = useGraphStore()
+const isFilterCategoriesOpen = ref(false)
 
 const getTextColor = (type) => {
   if (type === 'incose_source') return '#00bfff'
@@ -131,6 +128,13 @@ const handleNodeClick = (nodeId) => {
 .panel { background: rgba(15, 15, 25, 0.85); padding: 20px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); z-index: 10; position: absolute; }
 #right-panel { top: 20px; right: 20px; width: 340px; height: calc(100vh - 40px); display: flex; flex-direction: column; border-right: 4px solid #00bfff; box-sizing: border-box; overflow: hidden; }
 h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(255, 255, 255, 0.2); padding-bottom: 10px; margin-bottom: 15px; flex-shrink: 0; }
+
+.analytics-section { border-top: 1px dashed rgba(255, 255, 255, 0.2); padding-top: 15px; margin-top: 15px; }
+.section-title { font-size: 13px; color: #fff; margin: 0; }
+.collapsible-header { cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; transition: color 0.2s; }
+.collapsible-header:hover { color: #00bfff; }
+.toggle-icon { font-size: 10px; color: #888; transition: transform 0.2s; }
+.collapsible-content { margin-top: 12px; }
 .metric-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 12px; border-radius: 6px; margin-bottom: 12px; text-align: center; flex-shrink: 0; }
 .metric-title { font-size: 10px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; }
 .metric-value { font-size: 20px; font-weight: bold; color: #00bfff; }

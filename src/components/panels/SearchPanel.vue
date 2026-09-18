@@ -1,50 +1,55 @@
 <template>
   <div class="search-section">
-    <h3>Search & Batch Edit</h3>
+    <h3 class="section-title collapsible-header" @click="isSearchOpen = !isSearchOpen">
+      Search & Batch Edit
+      <span class="toggle-icon">{{ isSearchOpen ? '▼' : '▶' }}</span>
+    </h3>
     
-    <div class="search-bar">
-      <!-- Search Mode Selector -->
-      <select v-model="searchType" class="search-select" @change="executeSearch">
-        <option value="author">By Author</option>
-        <option value="title">By Title</option>
-        <option value="all">Show All (*)</option>
-      </select>
-      
-      <input 
-        v-if="searchType !== 'all'" 
-        type="text" 
-        v-model="searchQuery" 
-        placeholder="Enter search term..." 
-        @input="executeSearch" 
-        class="search-input"
-      >
-    </div>
-
-    <div v-if="searchResults.length > 0" class="search-controls">
-      <button class="nav-btn" @click="selectAll" :disabled="isSelecting">
-        {{ isSelecting ? 'Selecting...' : 'Select All' }}
-      </button>
-      <button class="nav-btn" @click="deselectAll">Clear</button>
-      <button class="nav-btn edit-btn" @click="editSelected" :disabled="selectedIds.length === 0">
-        Edit Selected ({{ selectedIds.length }})
-      </button>
-    </div>
-
-    <!-- Limit DOM rendering to 100 items to prevent freezing -->
-    <div class="search-results" v-if="searchResults.length > 0">
-      <div class="meta-info" v-if="searchResults.length > 100">
-        Showing top 100 of {{ searchResults.length }} results. Use "Select All" to capture all.
+    <div v-show="isSearchOpen" class="collapsible-content">
+      <div class="search-bar" style="margin-top: 10px;">
+        <!-- Search Mode Selector -->
+        <select v-model="searchType" class="search-select" @change="executeSearch">
+          <option value="author">By Author</option>
+          <option value="title">By Title</option>
+          <option value="all">Show All (*)</option>
+        </select>
+        
+        <input 
+          v-if="searchType !== 'all'" 
+          type="text" 
+          v-model="searchQuery" 
+          placeholder="Enter search term..." 
+          @input="executeSearch" 
+          class="search-input"
+        >
       </div>
-      <label v-for="node in searchResults.slice(0, 100)" :key="node.id" class="result-item">
-        <input type="checkbox" :value="node.id" v-model="selectedIds">
-        <div class="result-info">
-          <span class="res-title" :style="{ color: getTextColor(node.type) }">{{ truncate(node.title) }}</span>
-          <span class="res-author">{{ truncate(node.authors, 40) }}</span>
+
+      <div v-if="searchResults.length > 0" class="search-controls">
+        <button class="nav-btn" @click="selectAll" :disabled="isSelecting">
+          {{ isSelecting ? 'Selecting...' : 'Select All' }}
+        </button>
+        <button class="nav-btn" @click="deselectAll">Clear</button>
+        <button class="nav-btn edit-btn" @click="editSelected" :disabled="selectedIds.length === 0">
+          Edit Selected ({{ selectedIds.length }})
+        </button>
+      </div>
+
+      <!-- Limit DOM rendering to 100 items to prevent freezing -->
+      <div class="search-results" v-if="searchResults.length > 0">
+        <div class="meta-info" v-if="searchResults.length > 100">
+          Showing top 100 of {{ searchResults.length }} results. Use "Select All" to capture all.
         </div>
-      </label>
-    </div>
-    <div v-else-if="searchType !== 'all' && searchQuery.length > 2" class="empty-search">
-      No matches found in visible categories.
+        <label v-for="node in searchResults.slice(0, 100)" :key="node.id" class="result-item">
+          <input type="checkbox" :value="node.id" v-model="selectedIds">
+          <div class="result-info">
+            <span class="res-title" :style="{ color: getTextColor(node.type) }">{{ truncate(node.title) }}</span>
+            <span class="res-author">{{ truncate(node.authors, 40) }}</span>
+          </div>
+        </label>
+      </div>
+      <div v-else-if="searchType !== 'all' && searchQuery.length > 2" class="empty-search">
+        No matches found in visible categories.
+      </div>
     </div>
   </div>
 </template>
@@ -54,6 +59,7 @@ import { ref } from 'vue'
 import { useGraphStore } from '../../store/graphStore.js'
 
 const store = useGraphStore()
+const isSearchOpen = ref(false)
 const searchType = ref('author')
 const searchQuery = ref('')
 const searchResults = ref([])
@@ -101,8 +107,12 @@ const editSelected = () => { store.openModal(selectedIds.value) }
 </script>
 
 <style scoped>
-.search-section { margin-top: 25px; border-top: 1px dashed rgba(255, 255, 255, 0.2); padding-top: 15px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
-h3 { margin-top: 0; color: #fff; font-size: 14px; margin-bottom: 10px; }
+.search-section { margin-top: 25px; border-top: 1px dashed rgba(255, 255, 255, 0.2); padding-top: 15px; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+.section-title { font-size: 13px; color: #fff; margin: 0; }
+.collapsible-header { cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; transition: color 0.2s; }
+.collapsible-header:hover { color: #00bfff; }
+.toggle-icon { font-size: 10px; color: #888; transition: transform 0.2s; }
+.collapsible-content { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; }
 .search-bar { display: flex; gap: 5px; margin-bottom: 10px; }
 .search-select { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 4px; font-size: 11px; padding: 5px; }
 .search-select option { background: #1a1a24; }
