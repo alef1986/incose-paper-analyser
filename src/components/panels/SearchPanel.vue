@@ -11,6 +11,7 @@
         <select v-model="searchType" class="search-select" @change="executeSearch">
           <option value="author">By Author</option>
           <option value="title">By Title</option>
+          <option value="id">By OpenAlex ID</option>
           <option value="all">Show All (*)</option>
         </select>
         
@@ -81,7 +82,7 @@ const executeSearch = () => {
     return
   }
 
-  const query = searchQuery.value.toLowerCase()
+  const query = searchQuery.value.toLowerCase().trim()
   searchResults.value = Array.from(store.graphModel.nodes.values()).filter(n => {
     // Respect global filters from the right panel
     if (!store.displayFilters[n.type]) return false
@@ -89,6 +90,13 @@ const executeSearch = () => {
     if (searchType.value === 'all') return true
     if (searchType.value === 'author') return n.authors && n.authors.toLowerCase().includes(query)
     if (searchType.value === 'title') return n.title && n.title.toLowerCase().includes(query)
+    if (searchType.value === 'id') {
+      if (!n.id) return false
+      const cleanQuery = query.replace(/^https?:\/\/openalex\.org\//i, '').trim()
+      if (!cleanQuery) return false
+      const cleanId = String(n.id).toLowerCase().replace(/^https?:\/\/openalex\.org\//i, '').trim()
+      return cleanId.includes(cleanQuery) || String(n.id).toLowerCase().includes(query)
+    }
     return false
   })
 }

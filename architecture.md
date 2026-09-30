@@ -32,7 +32,7 @@ Isolated, framework-agnostic JavaScript library implementing graph mathematics a
 *   **`src/components/panels/MetricsPanel.vue`**: Right-side system metrics panel. Displays overall operational closure indicators, system boundary visibility toggles (Core, Canon, Environment, Excluded), the ranked Top Hubs index, and node editing triggers.
 *   **`src/components/panels/DiffusionPanel.vue`**: Knowledge Diffusion visualizer. Renders temporal concept histograms tracking how ideas from filtered external domains or specific publication cohorts root themselves into core publications across subsequent years.
 *   **`src/components/panels/SunburstChart.vue`**: Multi-level hierarchical sunburst visualizer (Domain > Field > Subfield) representing external environmental knowledge. Features PiP/Fullscreen toggling, zoom drill-down, and uniform color anchoring across dynamic temporal filtering.
-*   **`src/components/panels/SearchPanel.vue`**: Multi-criteria author/title search engine with batch selection capabilities, designed for mass categorization of environmental entities into Canon or Irrelevant noise.
+*   **`src/components/panels/SearchPanel.vue`**: Multi-criteria author/title/ID search engine with batch selection capabilities, designed for mass categorization of environmental entities into Canon or Irrelevant noise.
 *   **`src/components/visualization/ForceGraph3D.vue`**: WebGL 3D network visualizer based on `3d-force-graph`. Translates sociological boundaries into spatial structures and applies visual "Ghosting" (reduced opacity and unlinking) to nodes filtered out of the active analytical scope.
 
 ---
