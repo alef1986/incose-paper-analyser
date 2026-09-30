@@ -41,7 +41,7 @@
       
       <div class="field-group" v-if="!store.isBatchMode">
         <p class="meta-info"><b>URL / DOI:</b> <a :href="singleNodeUrl" target="_blank">{{ singleNodeUrl }}</a></p>
-        <p class="meta-info"><b>Authors:</b> {{ store.inspectedNodes[0]?.authors || 'Unknown' }}</p>
+        <p class="meta-info"><b>Authors:</b> {{ displayAuthors(store.inspectedNodes[0]?.authors) }}</p>
         <!-- NEW: Taxonomy Display -->
         <p class="meta-info" v-if="store.inspectedNodes[0]?.domain && store.inspectedNodes[0]?.domain !== 'Unknown'">
           <b>Taxonomy: </b> 
@@ -110,6 +110,109 @@
               <li v-if="citingNodes.length === 0" class="empty-text">No known incoming citations</li>
               <li v-for="citer in citingNodes.slice(0, 15)" :key="citer.id" @click="attemptAction('jump', citer.id)">{{ truncate(citer.title) }}</li>
             </ul>
+          </div>
+        </div>
+
+
+        <!-- GhostHunter Stub Resolution Section -->
+        <div class="field-group separator ghost-section">
+          <div class="ghost-header">
+            <span class="ghost-title">GhostHunter Resolution</span>
+            <span class="ghost-badge">Crossref &times; OpenAlex</span>
+          </div>
+          <p class="ghost-desc">
+            Resolves unindexed stubs by extracting and intersecting bibliographies from citing works.
+          </p>
+
+          <div class="ghost-filters">
+            <label class="ghost-check">
+              <input type="checkbox" v-model="ghostHunter.includeCore" :disabled="ghostHunter.isRunning" />
+              Include citations from Core
+            </label>
+            <label class="ghost-check">
+              <input type="checkbox" v-model="ghostHunter.includeEnv" :disabled="ghostHunter.isRunning" />
+              Include citations from Environment
+            </label>
+          </div>
+
+          <button
+            class="nav-btn ghost-trigger-btn"
+            @click="triggerGhostHunter"
+            :disabled="ghostHunter.isRunning || (!ghostHunter.includeCore && !ghostHunter.includeEnv)"
+          >
+            {{ ghostHunter.isRunning ? 'Analyzing Crossref References...' : 'Run GhostHunter Analysis' }}
+          </button>
+
+          <!-- Progress Bar & Status -->
+          <div v-if="ghostHunter.isRunning" class="ghost-progress-container">
+            <div class="ghost-progress-bar" :style="{ width: ghostHunter.progressPercent + '%' }"></div>
+            <span class="ghost-progress-text">{{ ghostHunter.progressStatus }}</span>
+          </div>
+
+          <!-- Status Messages -->
+          <div v-if="ghostHunter.errorMessage" class="ghost-alert ghost-alert-error">
+            {{ ghostHunter.errorMessage }}
+          </div>
+          <div
+            v-else-if="ghostHunter.summaryMessage && !ghostHunter.isRunning && ghostHunter.candidates.length === 0"
+            class="ghost-alert ghost-alert-info"
+          >
+            {{ ghostHunter.summaryMessage }}
+          </div>
+
+          <!-- Candidates / Overlaps Results -->
+          <div v-if="ghostHunter.candidates.length > 0 && !ghostHunter.isRunning" class="ghost-results">
+            <div class="ghost-results-header">
+              <span>Candidate Matches ({{ ghostHunter.candidates.length }})</span>
+            </div>
+
+            <div
+              v-for="cand in ghostHunter.candidates"
+              :key="cand.clusterId"
+              class="ghost-card"
+              :class="{ 'ghost-card-high': cand.confidence === 'High', 'ghost-card-raw': !cand.targetSchema }"
+            >
+              <div class="ghost-card-top">
+                <span class="ghost-type-badge" :class="cand.matchType === 'Exact DOI' ? 'badge-doi' : 'badge-text'">
+                  {{ cand.matchType }}
+                </span>
+                <span class="ghost-cite-badge">
+                  Cited by {{ cand.consensusCount }}/{{ cand.totalCitingSources }} source(s)
+                </span>
+                <span class="ghost-conf-badge" :class="cand.confidence === 'High' ? 'badge-high' : 'badge-mod'">
+                  {{ cand.confidence }}
+                </span>
+              </div>
+
+              <!-- OpenAlex Validated Result -->
+              <template v-if="cand.targetSchema">
+                <div class="ghost-work-title">{{ cand.targetSchema.title }}</div>
+                <div class="ghost-work-meta">
+                  <span><b>Year:</b> {{ cand.targetSchema.year || 'Unknown' }}</span>
+                  <span style="margin-left: 8px;"><b>Authors:</b> {{ displayAuthors(cand.targetSchema.authors) }}</span>
+                </div>
+                <div class="ghost-work-meta" v-if="cand.targetSchema.domain && cand.targetSchema.domain !== 'Unknown'">
+                  <span style="color: #5cb85c;">
+                    <b>Taxonomy:</b> {{ cand.targetSchema.domain }} &rarr; {{ cand.targetSchema.field }}
+                  </span>
+                </div>
+                <div class="ghost-work-link">
+                  <a :href="cand.targetSchema.id" target="_blank">{{ cand.targetSchema.id }}</a>
+                </div>
+
+                <button class="ghost-apply-btn" @click="handleApplyGhost(cand)">
+                  Apply to Node
+                </button>
+              </template>
+
+              <!-- Raw Citation Overlap (Unverified) -->
+              <template v-else>
+                <div class="ghost-raw-title">{{ cand.rawText || 'Raw unstructured citation' }}</div>
+                <div v-if="cand.abortedByRegEx" class="ghost-abort-note">
+                  OpenAlex text query aborted: no 4+ pure-letter word sequence found (prevented 504 timeout).
+                </div>
+              </template>
+            </div>
           </div>
         </div>
 
@@ -186,6 +289,7 @@
 <script setup>
 import { reactive, ref, computed, watch } from 'vue'
 import { useGraphStore } from '../../store/graphStore.js'
+import { useGhostHunter } from '../../composables/useGhostHunter.js'
 
 const POLITE_EMAIL = "alexander@efremov-systems.de"
 
@@ -195,7 +299,31 @@ const extractAuthors = (data) => {
   return names.length > 0 ? names.join(', ') : 'Unknown'
 }
 
+const displayAuthors = (authors) => {
+  if (!authors) return 'Unknown'
+  if (Array.isArray(authors)) return authors.join(', ') || 'Unknown'
+  return String(authors)
+}
+
 const store = useGraphStore()
+const ghostHunter = useGhostHunter()
+
+const triggerGhostHunter = () => {
+  if (store.inspectedNodes.length > 0) {
+    ghostHunter.runAnalysis(store.inspectedNodes[0])
+  }
+}
+
+const handleApplyGhost = (candidate) => {
+  ghostHunter.applyCandidate(candidate, (appliedSchema) => {
+    editForm.title = appliedSchema.title
+    editForm.domain = appliedSchema.domain
+    editForm.field = appliedSchema.field
+    editForm.subfield = appliedSchema.subfield
+    editForm.type = appliedSchema.type
+    isDirty.value = false
+  })
+}
 const editForm = reactive({ 
   title: '', type: '', justification: '',
   domain: '', field: '', subfield: ''
@@ -240,6 +368,7 @@ const truncate = (text) => text && text.length > 50 ? text.substring(0, 47) + '.
 
 watch(() => store.inspectedNodeIds, (ids) => {
   proposedData.title = null; batchReport.value = null
+  ghostHunter.reset()
   if (ids.length === 0) return
   
   const nodes = store.inspectedNodes
@@ -520,4 +649,240 @@ a { color: #f0ad4e; text-decoration: none; word-wrap: break-word; }
   width: 20px;
   text-align: right;
 }
+
+/* GhostHunter Resolution Styles */
+.ghost-section {
+  background: rgba(0, 191, 255, 0.04);
+  border: 1px dashed rgba(0, 191, 255, 0.4);
+  padding: 12px;
+  border-radius: 6px;
+  margin-top: 15px;
+}
+.ghost-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.ghost-title {
+  color: #00bfff;
+  font-weight: bold;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+.ghost-badge {
+  font-size: 9px;
+  background: rgba(0, 191, 255, 0.15);
+  color: #00bfff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 191, 255, 0.3);
+}
+.ghost-desc {
+  font-size: 11px;
+  color: #aaa;
+  margin: 0 0 10px 0;
+  line-height: 1.4;
+}
+.ghost-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px;
+  border-radius: 4px;
+}
+.ghost-check {
+  font-size: 11px;
+  color: #ddd;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  text-transform: none;
+  margin-bottom: 0;
+}
+.ghost-check input[type="checkbox"] {
+  cursor: pointer;
+}
+.ghost-trigger-btn {
+  width: 100%;
+  border-color: #00bfff;
+  color: #00bfff;
+  padding: 8px;
+  font-weight: bold;
+}
+.ghost-trigger-btn:hover:not(:disabled) {
+  background: rgba(0, 191, 255, 0.15);
+}
+.ghost-progress-container {
+  width: 100%;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #00bfff;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  margin-top: 10px;
+}
+.ghost-progress-bar {
+  height: 100%;
+  background: rgba(0, 191, 255, 0.35);
+  transition: width 0.3s ease;
+}
+.ghost-progress-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ghost-alert {
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.ghost-alert-error {
+  background: rgba(217, 83, 79, 0.15);
+  border: 1px solid #d9534f;
+  color: #f2dede;
+}
+.ghost-alert-info {
+  background: rgba(0, 191, 255, 0.1);
+  border: 1px solid #00bfff;
+  color: #d9edf7;
+}
+.ghost-results {
+  margin-top: 12px;
+}
+.ghost-results-header {
+  font-size: 11px;
+  font-weight: bold;
+  color: #ccc;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.ghost-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.ghost-card-high {
+  border-color: #5cb85c;
+  background: rgba(92, 184, 92, 0.04);
+}
+.ghost-card-raw {
+  border-color: rgba(255, 255, 255, 0.1);
+  opacity: 0.8;
+}
+.ghost-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.ghost-type-badge {
+  font-size: 9px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.badge-doi {
+  background: rgba(92, 184, 92, 0.2);
+  color: #5cb85c;
+  border: 1px solid rgba(92, 184, 92, 0.3);
+}
+.badge-text {
+  background: rgba(0, 191, 255, 0.2);
+  color: #00bfff;
+  border: 1px solid rgba(0, 191, 255, 0.3);
+}
+.ghost-cite-badge {
+  font-size: 9px;
+  color: #aaa;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.ghost-conf-badge {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: auto;
+  font-weight: bold;
+}
+.badge-high {
+  background: rgba(92, 184, 92, 0.2);
+  color: #5cb85c;
+}
+.badge-mod {
+  background: rgba(240, 173, 78, 0.2);
+  color: #f0ad4e;
+}
+.ghost-work-title {
+  font-size: 12px;
+  color: #fff;
+  font-weight: bold;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+.ghost-work-meta {
+  font-size: 11px;
+  color: #ccc;
+  margin-bottom: 4px;
+}
+.ghost-work-link {
+  font-size: 10px;
+  margin-bottom: 8px;
+}
+.ghost-work-link a {
+  color: #00bfff;
+}
+.ghost-apply-btn {
+  width: 100%;
+  padding: 6px 12px;
+  background: rgba(92, 184, 92, 0.2);
+  border: 1px solid #5cb85c;
+  color: #5cb85c;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: bold;
+  transition: background 0.2s ease;
+}
+.ghost-apply-btn:hover {
+  background: rgba(92, 184, 92, 0.35);
+  color: #fff;
+}
+.ghost-raw-title {
+  font-size: 11px;
+  color: #bbb;
+  font-style: italic;
+  line-height: 1.3;
+}
+.ghost-abort-note {
+  font-size: 10px;
+  color: #f0ad4e;
+  margin-top: 4px;
+  background: rgba(240, 173, 78, 0.1);
+  padding: 4px 6px;
+  border-radius: 3px;
+}
+
 </style>

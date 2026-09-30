@@ -396,7 +396,7 @@ const updateGraphData = () => {
   }
   if (!store.graphModel) return
 
-  let data = { nodes: [], links: [] }
+  let data
 
   if (store.focusedNodeId) {
     // 1. Если выбран узел в Top Hubs, то к окружению должен применяться фильтр года выхода и отраслей.

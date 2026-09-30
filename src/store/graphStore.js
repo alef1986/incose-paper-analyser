@@ -322,6 +322,72 @@ export const useGraphStore = defineStore('graph', {
       })
       this.recalculateMetrics()
     },
+    applyGhostHunterResult(oldNodeId, targetNodeData) {
+      if (!this.graphModel || !oldNodeId || !targetNodeData) return false
+      const node = this.graphModel.nodes.get(oldNodeId)
+      if (!node) return false
+
+      const newId = targetNodeData.id
+
+      // Strictly map target node schema
+      node.id = newId
+      node.title = targetNodeData.title
+      node.year = targetNodeData.year
+      node.publicationYear = targetNodeData.year
+      node.issns = Array.isArray(targetNodeData.issns) ? targetNodeData.issns : []
+      node.type = targetNodeData.type || node.type || 'external_or_unknown'
+      node.authors = Array.isArray(targetNodeData.authors) ? targetNodeData.authors : [String(targetNodeData.authors || 'Unknown')]
+      node.domain = targetNodeData.domain || 'Unknown'
+      node.field = targetNodeData.field || 'Unknown'
+      node.subfield = targetNodeData.subfield || 'Unknown'
+      node.references = Array.isArray(targetNodeData.references) ? targetNodeData.references : []
+
+      // If ID changed, safely update graphModel collections (retaining markRaw wrapper)
+      if (oldNodeId !== newId) {
+        this.graphModel.nodes.delete(oldNodeId)
+        this.graphModel.nodes.set(newId, node)
+
+        // Transfer adjacency list
+        const oldAdj = this.graphModel.adjacencyList.get(oldNodeId) || []
+        this.graphModel.adjacencyList.delete(oldNodeId)
+        const existingNewAdj = this.graphModel.adjacencyList.get(newId) || []
+        this.graphModel.adjacencyList.set(newId, [...existingNewAdj, ...oldAdj])
+
+        // Update links in graph
+        this.graphModel.links.forEach(l => {
+          if ((typeof l.source === 'object' ? l.source.id : l.source) === oldNodeId) {
+            if (typeof l.source === 'object') l.source = node; else l.source = newId
+          }
+          if ((typeof l.target === 'object' ? l.target.id : l.target) === oldNodeId) {
+            if (typeof l.target === 'object') l.target = node; else l.target = newId
+          }
+        })
+
+        // Update all adjacency list references
+        this.graphModel.adjacencyList.forEach(list => {
+          list.forEach(l => {
+            if ((typeof l.source === 'object' ? l.source.id : l.source) === oldNodeId) {
+              if (typeof l.source === 'object') l.source = node; else l.source = newId
+            }
+            if ((typeof l.target === 'object' ? l.target.id : l.target) === oldNodeId) {
+              if (typeof l.target === 'object') l.target = node; else l.target = newId
+            }
+          })
+        })
+
+        // Update store references
+        this.inspectedNodeIds = this.inspectedNodeIds.map(id => (id === oldNodeId ? newId : id))
+        if (this.focusedNodeId === oldNodeId) this.focusedNodeId = newId
+        if (this.activeNodeIds.has(oldNodeId)) {
+          this.activeNodeIds.delete(oldNodeId)
+          this.activeNodeIds.add(newId)
+        }
+      }
+
+      this.recalculateMetrics()
+      return true
+    },
+
     
     async executeLuhmannAnalytics() {
       if (!this.graphModel || this.inspectedNodeIds.length !== 1) return
