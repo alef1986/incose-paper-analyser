@@ -1,7 +1,17 @@
 // src/core/algorithms/LuhmannAnalytics.js
 
 const INCOSE_ISSNS = "1520-6858|1098-1241|2156-4868|2156-485X|2334-5837";
-const POLITE_HEADER = { "User-Agent": "mailto:efremoff@example.com" };
+const POLITE_EMAIL = "alexander@efremov-systems.de";
+const POLITE_HEADER = { "User-Agent": `mailto:${POLITE_EMAIL}` };
+
+export function getOpenAlexHeaders(customHeaders = {}) {
+    const headers = { ...customHeaders };
+    const apiKey = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_OPENALEX_API_KEY : undefined;
+    if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+    return headers;
+}
 
 export async function runLuhmannAnalysis(nodeId, graphModel) {
     const results = {
@@ -82,8 +92,8 @@ export async function runLuhmannAnalysis(nodeId, graphModel) {
 
     try {
         // Fix: Route through api.openalex.org instead of the public web URL
-        const apiUrl = `https://api.openalex.org/works/${encodeURIComponent(nodeId)}`;
-        const workRes = await fetch(apiUrl, { headers: POLITE_HEADER });
+        const apiUrl = `https://api.openalex.org/works/${encodeURIComponent(nodeId)}?mailto=${POLITE_EMAIL}`;
+        const workRes = await fetch(apiUrl, { headers: getOpenAlexHeaders(POLITE_HEADER) });
         
         if (!workRes.ok) throw new Error(`HTTP ${workRes.status}`);
         const workData = await workRes.json();
@@ -102,9 +112,9 @@ export async function runLuhmannAnalysis(nodeId, graphModel) {
             if (!authorId) continue;
 
             const filterQuery = `author.id:${authorId},primary_location.source.issn:${INCOSE_ISSNS}`;
-            const checkUrl = `https://api.openalex.org/works?filter=${filterQuery}&select=id&per-page=1`;
+            const checkUrl = `https://api.openalex.org/works?filter=${filterQuery}&select=id&per-page=1&mailto=${POLITE_EMAIL}`;
             
-            const checkRes = await fetch(checkUrl, { headers: POLITE_HEADER });
+            const checkRes = await fetch(checkUrl, { headers: getOpenAlexHeaders(POLITE_HEADER) });
             if (!checkRes.ok) continue;
             
             const checkData = await checkRes.json();

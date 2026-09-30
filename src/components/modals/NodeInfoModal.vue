@@ -293,6 +293,11 @@ import { useGhostHunter } from '../../composables/useGhostHunter.js'
 
 const POLITE_EMAIL = "alexander@efremov-systems.de"
 
+const getOpenAlexHeaders = () => {
+  const apiKey = import.meta.env.VITE_OPENALEX_API_KEY
+  return apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
+}
+
 const extractAuthors = (data) => {
   if (!data.authorships || !Array.isArray(data.authorships)) return 'Unknown'
   const names = data.authorships.map(a => a.author?.display_name || a.raw_author_name).filter(Boolean)
@@ -398,7 +403,7 @@ const fetchTitleFromOpenAlex = async () => {
   isFetchingTitle.value = true
   try {
     const url = `https://api.openalex.org/works/${encodeURIComponent(store.inspectedNodes[0].id)}?mailto=${POLITE_EMAIL}`
-    const res = await fetch(url)
+    const res = await fetch(url, { headers: getOpenAlexHeaders() })
     if (res.ok) {
       const data = await res.json()
       if (data.title) {
@@ -466,10 +471,10 @@ const runBatchFetch = async () => {
     const url = `https://api.openalex.org/works?filter=openalex_id:${idList}&per-page=50&mailto=${POLITE_EMAIL}`;
     
     try {
-      let res = await fetch(url);
+      let res = await fetch(url, { headers: getOpenAlexHeaders() });
       if (res.status === 429) {
         await new Promise(resolve => setTimeout(resolve, 2000));
-        res = await fetch(url);
+        res = await fetch(url, { headers: getOpenAlexHeaders() });
       }
 
       if (res.ok) {

@@ -6,6 +6,18 @@ const CROSSREF_HEADERS = {
 }
 
 /**
+ * Returns authorization headers for OpenAlex if API key is provided in environment
+ */
+export function getOpenAlexHeaders(customHeaders = {}) {
+  const headers = { ...customHeaders }
+  const apiKey = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_OPENALEX_API_KEY : undefined
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`
+  }
+  return headers
+}
+
+/**
  * Exact RegEx mandated for OpenAlex text search:
  * Finds the first chunk of at least 4 pure-letter words separated by whitespace.
  */
@@ -170,7 +182,7 @@ export async function queryOpenAlexByDoi(doi) {
 
   try {
     const url = `https://api.openalex.org/works?filter=doi:${encodeURIComponent(normalizedDoi)}&mailto=${POLITE_EMAIL}`
-    const res = await fetch(url)
+    const res = await fetch(url, { headers: getOpenAlexHeaders() })
     if (res.ok) {
       const data = await res.json()
       if (data.results && data.results.length > 0) {
@@ -195,7 +207,7 @@ export async function queryOpenAlexByText(rawText) {
 
   try {
     const url = `https://api.openalex.org/works?search=${encodeURIComponent(cleanQuery)}&per-page=3&mailto=${POLITE_EMAIL}`
-    const res = await fetch(url)
+    const res = await fetch(url, { headers: getOpenAlexHeaders() })
     if (res.ok) {
       const data = await res.json()
       if (data.results && data.results.length > 0) {
@@ -283,7 +295,7 @@ export async function runGhostHunterAnalysis({
     let doi = extractDoi(node)
     if (!doi && node.id.includes('openalex.org/W')) {
       try {
-        const oaRes = await fetch(`https://api.openalex.org/works/${encodeURIComponent(node.id)}?select=doi&mailto=${POLITE_EMAIL}`)
+        const oaRes = await fetch(`https://api.openalex.org/works/${encodeURIComponent(node.id)}?select=doi&mailto=${POLITE_EMAIL}`, { headers: getOpenAlexHeaders() })
         if (oaRes.ok) {
           const oaData = await oaRes.json()
           if (oaData.doi) doi = cleanDoi(oaData.doi)
