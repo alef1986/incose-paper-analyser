@@ -34,7 +34,7 @@ export const useGraphStore = defineStore('graph', {
     mainView: 'graph', 
     
     // ФИКС 1: Добавлено поле issnCounts в стартовые метрики
-    metrics: { totalNodes: 0, totalEdges: 0, coreCount: 0, canonCount: 0, envCount: 0, irrelevantCount: 0, issnCounts: {} },
+    metrics: { totalNodes: 0, totalEdges: 0, coreCount: 0, canonCount: 0, envCount: 0, irrelevantCount: 0, issnCounts: {}, coreNodesPerYear: {} },
     topNodes: [],
     
     focusedNodeId: null,
@@ -105,11 +105,18 @@ export const useGraphStore = defineStore('graph', {
       const activeCoreNodes = new Set()
       const coreOutDegree = new Map()
       
-      // ФИКС 2: Инициализируем объект для подсчета ISSN
+      // ФИКС 2: Инициализируем объект для подсчета ISSN и глобального подсчета публикаций ядра по годам
       const tempIssnCounts = {} 
+      const coreNodesPerYear = {}
 
       this.graphModel.nodes.forEach(n => {
         if (n.type === 'incose_source') {
+          const yRaw = n.year || n.publicationYear
+          const y = yRaw ? parseInt(yRaw, 10) : null
+          if (y && !isNaN(y)) {
+            coreNodesPerYear[y] = (coreNodesPerYear[y] || 0) + 1
+          }
+
           const nodeIssns = n.issns || []
           
           // ФИКС 3: Считаем ISSN для каждого узла ядра
@@ -279,6 +286,7 @@ export const useGraphStore = defineStore('graph', {
         envCount: env, 
         irrelevantCount: irrelevant,
         issnCounts: tempIssnCounts,
+        coreNodesPerYear,
         originalCoreCount: originalCore,
         originalCanonCount: originalCanon,
         originalEnvCount: originalEnv,

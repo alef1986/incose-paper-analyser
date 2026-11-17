@@ -1,6 +1,9 @@
 <template>
   <div class="diffusion-panel">
-    <h3 class="panel-title">Knowledge Diffusion Analysis</h3>
+    <h3 class="panel-title">
+      Knowledge Diffusion Analysis
+      <span class="help-icon" title="Measures 'Anschlussfähigkeit' (Recursive Connectability). Did importing this external knowledge trigger subsequent internal communications within the core system?">?</span>
+    </h3>
     
     <div v-if="!isUnlocked" class="empty-state">
       Select at least one publication year (Left Panel) or a taxonomy sector (Sunburst) to analyze knowledge diffusion.
@@ -31,14 +34,33 @@
       </div>
       
       <div v-if="store.diffusionStats && store.diffusionStats.length > 0" class="histogram-box">
-        <span class="h-title">Concept Rooting (Citations by other core nodes over time)</span>
+        <div class="histogram-header">
+          <span class="h-title">
+            Concept Rooting
+            <span class="help-icon" title="Tracks Meaning Condensation over time. Switch to Normalized (%) to adjust for the overall growth of the INCOSE publication volume.">?</span>
+          </span>
+          <div class="btn-toggle-group">
+            <button 
+              type="button"
+              class="toggle-btn" 
+              :class="{ active: !isNormalized }" 
+              @click="isNormalized = false"
+            ># Absolute</button>
+            <button 
+              type="button"
+              class="toggle-btn" 
+              :class="{ active: isNormalized }" 
+              @click="isNormalized = true"
+            >% Normalized</button>
+          </div>
+        </div>
         <div class="bars-container">
           <div v-for="item in store.diffusionStats" :key="item.year" class="bar-row">
             <span class="bar-year">{{ item.year }}</span>
             <div class="bar-track">
-              <div class="bar-fill" :style="{ width: getBarWidth(item.count) + '%' }"></div>
+              <div class="bar-fill" :style="{ width: getBarWidth(item) + '%' }"></div>
             </div>
-            <span class="bar-count">{{ item.count }}</span>
+            <span class="bar-count" :class="{ 'is-normalized': isNormalized }">{{ getDisplayValue(item) }}</span>
           </div>
         </div>
       </div>
@@ -49,7 +71,10 @@
 
       <!-- Boundary Spanners (Top Translators) -->
       <div v-if="boundarySpanners && boundarySpanners.length > 0" class="spanners-box">
-        <span class="h-title">Boundary Spanners (Top Translators)</span>
+        <span class="h-title">
+          Boundary Spanners (Top Translators)
+          <span class="help-icon" title="Identifies mechanisms of 'Interpenetration'. Core papers that imported external knowledge and successfully translated it into the system's code (achieving high internal citation).">?</span>
+        </span>
         <ul class="spanner-list">
           <li 
             v-for="item in boundarySpanners" 
@@ -76,24 +101,50 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useGraphStore } from '../../store/graphStore.js'
 
 const store = useGraphStore()
+const isNormalized = ref(false)
 
 // 1. Unlock Panel: display if either a year OR a taxonomy sector is selected
 const isUnlocked = computed(() => {
   return store.activeFilters.years.length > 0 || !!store.activeFilters.taxonomy
 })
 
+const getItemNormalizedRatio = (item) => {
+  const total = store.metrics?.coreNodesPerYear?.[item.year] || 0
+  return total > 0 ? (item.count / total) : 0
+}
+
 const maxCount = computed(() => {
   if (!store.diffusionStats || store.diffusionStats.length === 0) return 0
   return Math.max(...store.diffusionStats.map(d => d.count))
 })
 
-const getBarWidth = (count) => {
-  if (maxCount.value === 0) return 0
-  return (count / maxCount.value) * 100
+const maxNormalizedRatio = computed(() => {
+  if (!store.diffusionStats || store.diffusionStats.length === 0) return 0
+  return Math.max(...store.diffusionStats.map(d => getItemNormalizedRatio(d)))
+})
+
+const getBarWidth = (item) => {
+  if (!isNormalized.value) {
+    if (maxCount.value === 0) return 0
+    return (item.count / maxCount.value) * 100
+  } else {
+    if (maxNormalizedRatio.value === 0) return 0
+    const ratio = getItemNormalizedRatio(item)
+    return (ratio / maxNormalizedRatio.value) * 100
+  }
+}
+
+const getDisplayValue = (item) => {
+  if (!isNormalized.value) {
+    return item.count
+  }
+  const total = store.metrics?.coreNodesPerYear?.[item.year] || 0
+  if (!total) return '0.00%'
+  return ((item.count / total) * 100).toFixed(2) + '%'
 }
 
 const truncateTitle = (title) => {
@@ -235,7 +286,30 @@ const handleSpannerClick = (nodeId) => {
 
 <style scoped>
 .diffusion-panel { background: rgba(15,15,25,0.9); border: 1px solid #00bfff; padding: 15px; border-radius: 6px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,191,255,0.1); }
-.panel-title { color: #fff; font-size: 13px; margin: 0 0 10px 0; border-bottom: 1px dashed #444; padding-bottom: 5px; }
+.panel-title { color: #fff; font-size: 13px; margin: 0 0 10px 0; border-bottom: 1px dashed #444; padding-bottom: 5px; display: flex; align-items: center; }
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #2a2a3a;
+  color: #aaa;
+  font-size: 10px;
+  font-weight: normal;
+  text-transform: none;
+  cursor: help;
+  margin-left: 6px;
+  border: 1px solid #555;
+  user-select: none;
+  vertical-align: middle;
+}
+.help-icon:hover {
+  background: #3a3a4a;
+  color: #fff;
+  border-color: #00bfff;
+}
 .empty-state { font-size: 11px; color: #888; font-style: italic; line-height: 1.4; }
 .metrics-grid { display: flex; gap: 10px; margin-bottom: 12px; }
 .metric-box { background: rgba(0, 191, 255, 0.05); border: 1px solid rgba(0, 191, 255, 0.2); padding: 8px; border-radius: 4px; flex: 1; text-align: center; }
@@ -270,7 +344,41 @@ const handleSpannerClick = (nodeId) => {
 
 /* Histogram Styles */
 .histogram-box { border-top: 1px solid #333; padding-top: 10px; }
-.h-title { font-size: 11px; color: #ccc; margin-bottom: 8px; display: block; text-transform: uppercase; letter-spacing: 0.3px; }
+.histogram-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 6px;
+}
+.histogram-header .h-title {
+  margin-bottom: 0;
+}
+.h-title { font-size: 11px; color: #ccc; margin-bottom: 8px; display: flex; align-items: center; text-transform: uppercase; letter-spacing: 0.3px; }
+.btn-toggle-group {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #444;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.toggle-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 9px;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.toggle-btn:hover {
+  color: #fff;
+}
+.toggle-btn.active {
+  background: rgba(0, 191, 255, 0.25);
+  color: #00bfff;
+  font-weight: bold;
+}
 .bars-container { max-height: 160px; overflow-y: auto; padding-right: 5px; }
 .bars-container::-webkit-scrollbar { width: 4px; }
 .bars-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
@@ -278,7 +386,8 @@ const handleSpannerClick = (nodeId) => {
 .bar-year { font-size: 10px; color: #888; width: 30px; }
 .bar-track { flex: 1; height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; }
 .bar-fill { height: 100%; background: #00bfff; transition: width 0.3s ease; }
-.bar-count { font-size: 10px; color: #ccc; width: 25px; text-align: right; }
+.bar-count { font-size: 10px; color: #ccc; width: 30px; text-align: right; flex-shrink: 0; }
+.bar-count.is-normalized { width: 50px; }
 
 /* Boundary Spanners Styles */
 .spanners-box {

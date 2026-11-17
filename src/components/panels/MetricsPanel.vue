@@ -34,13 +34,18 @@
       
       <div v-show="isTopHubsOpen" class="collapsible-content" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 10px;">
         
+        <div class="list-search">
+          <input type="text" v-model="listSearchQuery" placeholder="Filter lists by title or author..." class="edit-input" />
+          <button v-if="listSearchQuery" @click="listSearchQuery = ''" class="clear-btn">✖</button>
+        </div>
+
         <!-- Two distinct scrollable lists when filters are active -->
         <template v-if="hasActiveFilters">
           <!-- Target Environment -->
           <div class="split-list-section">
             <div class="split-list-header">
               <span class="split-title env-text">Target Environment</span>
-              <span class="split-count">({{ store.filteredEnvNodesBySelection.length }})</span>
+              <span class="split-count">({{ filteredEnvNodesBySelection.length }})</span>
             </div>
             <div class="metric-card top-list-container">
               <ul class="top-list" @scroll="handleScroll">
@@ -49,12 +54,12 @@
                   :key="item.node.id" 
                   :id="'list-node-' + item.node.id"
                   :class="{ 'is-focused': store.focusedNodeId === item.node.id }"
-                  @click="handleNodeClick(item.node.id, store.filteredEnvNodesBySelection.map(i => i.node))"
+                  @click="handleNodeClick(item.node.id, filteredEnvNodesBySelection.map(i => i.node))"
                 >
                   <span :style="{ color: getTextColor(item.node.type) }">{{ truncateTitle(item.node.title) }}</span>
                   <span class="badge">{{ item.localInDegree }}</span>
                 </li>
-                <li v-if="store.filteredEnvNodesBySelection.length === 0" class="empty-list-notice">
+                <li v-if="filteredEnvNodesBySelection.length === 0" class="empty-list-notice">
                   No target environment nodes
                 </li>
               </ul>
@@ -65,7 +70,7 @@
           <div class="split-list-section">
             <div class="split-list-header">
               <span class="split-title core-text">Citing Core</span>
-              <span class="split-count">({{ store.citingCoreNodesForSelection.length }})</span>
+              <span class="split-count">({{ citingCoreNodesForSelection.length }})</span>
             </div>
             <div class="metric-card top-list-container">
               <ul class="top-list" @scroll="handleScroll">
@@ -74,12 +79,12 @@
                   :key="item.node.id" 
                   :id="'list-node-' + item.node.id"
                   :class="{ 'is-focused': store.focusedNodeId === item.node.id }"
-                  @click="handleNodeClick(item.node.id, store.citingCoreNodesForSelection.map(i => i.node))"
+                  @click="handleNodeClick(item.node.id, citingCoreNodesForSelection.map(i => i.node))"
                 >
                   <span :style="{ color: getTextColor(item.node.type) }">{{ truncateTitle(item.node.title) }}</span>
                   <span class="badge">{{ item.sectorOutDegree }}</span>
                 </li>
-                <li v-if="store.citingCoreNodesForSelection.length === 0" class="empty-list-notice">
+                <li v-if="citingCoreNodesForSelection.length === 0" class="empty-list-notice">
                   No citing core nodes
                 </li>
               </ul>
@@ -99,6 +104,9 @@
             >
               <span :style="{ color: getTextColor(node.type) }">{{ truncateTitle(node.title) }}</span>
               <span class="badge">{{ node.inDegree }}</span>
+            </li>
+            <li v-if="unifiedDisplayList.length === 0" class="empty-list-notice">
+              No matching nodes
             </li>
           </ul>
         </div>
@@ -133,6 +141,7 @@ const isTopHubsOpen = ref(true)
 
 // Infinite scroll visible count
 const visibleCount = ref(100)
+const listSearchQuery = ref('')
 
 const hasActiveFilters = computed(() => {
   return !!store.activeFilters.taxonomy || store.activeFilters.years.length > 0
@@ -154,12 +163,32 @@ const getTextColor = (type) => {
 
 const truncateTitle = (title) => title && title.length > 35 ? title.substring(0, 32) + '...' : (title || 'Untitled')
 
+const filterBySearch = (list, getNode = item => item.node || item) => {
+  if (!listSearchQuery.value.trim()) return list
+  const q = listSearchQuery.value.trim().toLowerCase()
+  return list.filter(item => {
+    const node = getNode(item)
+    if (!node) return false
+    const title = (node.title || '').toLowerCase()
+    const authors = (node.authors || '').toLowerCase()
+    return title.includes(q) || authors.includes(q)
+  })
+}
+
+const filteredEnvNodesBySelection = computed(() => {
+  return filterBySearch(store.filteredEnvNodesBySelection || [])
+})
+
+const citingCoreNodesForSelection = computed(() => {
+  return filterBySearch(store.citingCoreNodesForSelection || [])
+})
+
 // Вычисляем список узлов с учетом глобальных фильтров, ISSN И текущих фильтров графа (Годы + Таксономия)
 const filteredTopNodes = computed(() => {
   const validCoreIds = new Set(store.filteredCoreNodes.map(n => n.id));
   const hasFilters = store.activeFilters.years.length > 0 || store.activeFilters.taxonomy !== null;
 
-  return store.topNodes.filter(n => {
+  const base = store.topNodes.filter(n => {
     // 1. Проверка галочек отображения типов
     if (!store.displayFilters[n.type]) return false;
     
@@ -177,6 +206,8 @@ const filteredTopNodes = computed(() => {
     
     return true;
   })
+
+  return filterBySearch(base, n => n)
 })
 
 const unifiedDisplayList = computed(() => {
@@ -185,7 +216,18 @@ const unifiedDisplayList = computed(() => {
     const isPresent = list.some(n => n.id === store.focusedNodeId)
     if (!isPresent) {
       const activeNode = store.graphModel?.nodes.get(store.focusedNodeId)
-      if (activeNode) list.unshift(activeNode)
+      if (activeNode) {
+        if (!listSearchQuery.value.trim()) {
+          list.unshift(activeNode)
+        } else {
+          const q = listSearchQuery.value.trim().toLowerCase()
+          const title = (activeNode.title || '').toLowerCase()
+          const authors = (activeNode.authors || '').toLowerCase()
+          if (title.includes(q) || authors.includes(q)) {
+            list.unshift(activeNode)
+          }
+        }
+      }
     }
   }
   return list
@@ -193,11 +235,11 @@ const unifiedDisplayList = computed(() => {
 
 // Sliced lists for infinite scrolling
 const visibleTargetEnvNodes = computed(() => {
-  return store.filteredEnvNodesBySelection.slice(0, visibleCount.value)
+  return filteredEnvNodesBySelection.value.slice(0, visibleCount.value)
 })
 
 const visibleCitingCoreNodes = computed(() => {
-  return store.citingCoreNodesForSelection.slice(0, visibleCount.value)
+  return citingCoreNodesForSelection.value.slice(0, visibleCount.value)
 })
 
 const visibleGlobalNodes = computed(() => {
@@ -211,7 +253,8 @@ watch(
     () => store.activeFilters.years,
     () => store.displayFilters,
     () => store.selectedISSNs,
-    () => store.focusedNodeId
+    () => store.focusedNodeId,
+    listSearchQuery
   ],
   () => {
     visibleCount.value = 100
@@ -286,6 +329,43 @@ h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(
   flex-direction: column;
   min-height: 0;
   margin-top: 6px;
+}
+.list-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.list-search .edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 6px 26px 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.list-search .edit-input:focus {
+  outline: none;
+  border-color: #00bfff;
+}
+.clear-btn {
+  position: absolute;
+  right: 6px;
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.clear-btn:hover {
+  color: #fff;
 }
 .split-list-header {
   display: flex;

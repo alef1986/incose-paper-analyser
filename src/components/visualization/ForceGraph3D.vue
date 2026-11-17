@@ -70,6 +70,9 @@ let mouseX = 0, mouseY = 0
 const showWarningModal = ref(false)
 const pendingNodeCount = ref(0)
 let pendingGraphData = null
+let physicsTimeout = null
+let defaultChargeForce = null
+let defaultLinkForce = null
 
 const formatAuthors = (authorsStr) => {
   if (!authorsStr || authorsStr === 'Unknown') return 'Unknown'
@@ -314,6 +317,8 @@ const initGraph = () => {
     })
 
   Graph.d3Force('charge').strength(-30)
+  defaultChargeForce = Graph.d3Force('charge')
+  defaultLinkForce = Graph.d3Force('link')
   window.addEventListener('resize', handleWindowResize)
   window.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY })
 
@@ -424,6 +429,15 @@ watch(() => store.mainView, async (newVal) => {
 
 const proceedWithGraphData = (data) => {
   if (!Graph) initGraph()
+
+  // Restore forces if previously disabled for large graphs
+  if (defaultChargeForce && !Graph.d3Force('charge')) {
+    Graph.d3Force('charge', defaultChargeForce)
+  }
+  if (defaultLinkForce && !Graph.d3Force('link')) {
+    Graph.d3Force('link', defaultLinkForce)
+  }
+
   Graph.graphData(data)
   Graph.nodeColor(Graph.nodeColor())
   Graph.nodeVal(Graph.nodeVal())
@@ -447,8 +461,23 @@ const proceedWithGraphData = (data) => {
 const onContinueRendering = () => {
   showWarningModal.value = false
   if (pendingGraphData) {
-    proceedWithGraphData(pendingGraphData)
+    const data = pendingGraphData
+    proceedWithGraphData(data)
     pendingGraphData = null
+
+    if (physicsTimeout) {
+      clearTimeout(physicsTimeout)
+      physicsTimeout = null
+    }
+
+    if (data.nodes && data.nodes.length > 1500) {
+      physicsTimeout = setTimeout(() => {
+        if (Graph) {
+          Graph.d3Force('charge', null)
+          Graph.d3Force('link', null)
+        }
+      }, 1500)
+    }
   }
 }
 
@@ -490,6 +519,20 @@ const updateGraphData = () => {
 
   showWarningModal.value = false
   proceedWithGraphData(data)
+
+  if (physicsTimeout) {
+    clearTimeout(physicsTimeout)
+    physicsTimeout = null
+  }
+
+  if (data.nodes && data.nodes.length > 1500) {
+    physicsTimeout = setTimeout(() => {
+      if (Graph) {
+        Graph.d3Force('charge', null)
+        Graph.d3Force('link', null)
+      }
+    }, 1500)
+  }
 }
 
 // Watch everything that affects the rendered data structure
@@ -537,6 +580,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (physicsTimeout) {
+    clearTimeout(physicsTimeout)
+    physicsTimeout = null
+  }
   window.removeEventListener('resize', handleWindowResize)
   stopPipObserver()
   if (Graph) Graph._destructor()
