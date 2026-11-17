@@ -59,7 +59,8 @@ export const useGraphStore = defineStore('graph', {
       direction: 'both', 
       showCore: true,
       showCanon: true,
-      showEnv: true
+      showEnv: true,
+      hideLeaves: false
     },
     
     isModalOpen: false,
@@ -448,10 +449,32 @@ export const useGraphStore = defineStore('graph', {
       } finally {
         this.isAnalyticsLoading = false
       }
+    },
+
+    promoteToCanon(nodeIds) {
+      nodeIds.forEach(id => {
+        const node = this.graphModel.nodes.get(id);
+        if (node) {
+          node.type = 'assimilated_canon';
+          node.justification = 'Auto-promoted via Canon Recommender (High structural resonance)';
+        }
+      });
+      this.recalculateMetrics();
     }
   },
   
   getters: {
+    canonCandidates(state) {
+      if (!state.graphModel) return [];
+      const candidates = [];
+      state.graphModel.nodes.forEach(n => {
+        // Must be environment and heavily cited by core
+        if (n.type === 'external_or_unknown' && n.inDegree >= 4) {
+          candidates.push(n);
+        }
+      });
+      return candidates.sort((a, b) => b.inDegree - a.inDegree);
+    },
     nodeRoles(state) {
       if (!state.graphModel) return new Map();
       const roles = new Map();

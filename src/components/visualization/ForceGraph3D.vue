@@ -449,6 +449,11 @@ const proceedWithGraphData = (data) => {
     Graph.d3Force('link', defaultLinkForce)
   }
 
+  const isMassive = data.nodes && data.nodes.length > 3000;
+  
+  // Disable arrows on massive graphs to cut geometries by 50%
+  Graph.linkDirectionalArrowLength(isMassive ? 0 : 1.5);
+
   Graph.graphData(data)
 
   if (store.focusedClique) {
@@ -506,13 +511,20 @@ const onContinueRendering = () => {
       physicsTimeout = null
     }
 
-    if (data.nodes && data.nodes.length > 1500) {
+    const nodeCount = data.nodes ? data.nodes.length : 0;
+    if (nodeCount > 3000) {
+      // Immediate physics freeze to prevent CPU deadlock on giant graphs
+      if (Graph) {
+        Graph.d3Force('charge', null);
+        Graph.d3Force('link', null);
+      }
+    } else if (nodeCount > 1000) {
       physicsTimeout = setTimeout(() => {
         if (Graph) {
-          Graph.d3Force('charge', null)
-          Graph.d3Force('link', null)
+          Graph.d3Force('charge', null);
+          Graph.d3Force('link', null);
         }
-      }, 1500)
+      }, 1500);
     }
   }
 }
@@ -564,13 +576,20 @@ const updateGraphData = () => {
     physicsTimeout = null
   }
 
-  if (data.nodes && data.nodes.length > 1500) {
+  const nodeCount = data.nodes ? data.nodes.length : 0;
+  if (nodeCount > 3000) {
+    // Immediate physics freeze to prevent CPU deadlock on giant graphs
+    if (Graph) {
+      Graph.d3Force('charge', null);
+      Graph.d3Force('link', null);
+    }
+  } else if (nodeCount > 1000) {
     physicsTimeout = setTimeout(() => {
       if (Graph) {
-        Graph.d3Force('charge', null)
-        Graph.d3Force('link', null)
+        Graph.d3Force('charge', null);
+        Graph.d3Force('link', null);
       }
-    }, 1500)
+    }, 1500);
   }
 }
 

@@ -90,6 +90,11 @@ export class Graph {
                 if (n.type === 'irrelevant') return false; 
             }
             
+            if (vizSettings && vizSettings.hideLeaves) {
+                // Hide external orphan leaves (cited only once in the entire network)
+                if (n.type !== 'incose_source' && n.type !== 'assimilated_canon' && n.inDegree <= 1) return false;
+            }
+            
             return true;
         }
 
@@ -216,6 +221,11 @@ export class Graph {
                 if (n.type === 'assimilated_canon' && !vizSettings.showCanon) return false;
                 if (n.type === 'external_or_unknown' && !vizSettings.showEnv) return false;
                 if (n.type === 'irrelevant') return false; 
+            }
+            
+            if (vizSettings && vizSettings.hideLeaves) {
+                // Hide external orphan leaves (cited only once in the entire network)
+                if (n.type !== 'incose_source' && n.type !== 'assimilated_canon' && n.inDegree <= 1) return false;
             }
             
             return true;

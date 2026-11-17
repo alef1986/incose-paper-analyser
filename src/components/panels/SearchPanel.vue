@@ -6,6 +6,17 @@
     </h3>
     
     <div v-show="hideHeader || isSearchOpen" class="collapsible-content">
+      <div class="canon-recommender" style="background: rgba(92, 184, 92, 0.1); border: 1px dashed #5cb85c; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 11px; color: #5cb85c; font-weight: bold; text-transform: uppercase;">Auto-Canon Recommender</span>
+          <span class="badge" style="background: rgba(92, 184, 92, 0.2); color: #5cb85c; border-color: #5cb85c;">{{ store.canonCandidates.length }} Found</span>
+        </div>
+        <p style="font-size: 10px; color: #ccc; margin: 0 0 10px 0;">Finds highly cited environment nodes (In-Degree &ge; 4) ready for systemic assimilation.</p>
+        <button class="nav-btn" style="width: 100%; border-color: #5cb85c; color: #5cb85c; font-weight: bold;" @click="promoteAllCandidates" :disabled="store.canonCandidates.length === 0">
+          Promote Top 50 to Canon
+        </button>
+      </div>
+
       <div class="search-bar" :style="!hideHeader ? 'margin-top: 10px;' : ''">
         <!-- Search Mode Selector -->
         <select v-model="searchType" class="search-select" @change="executeSearch">
@@ -119,6 +130,13 @@ const selectAll = () => {
 
 const deselectAll = () => { selectedIds.value = [] }
 const editSelected = () => { store.openModal(selectedIds.value) }
+
+const promoteAllCandidates = () => {
+  const ids = store.canonCandidates.slice(0, 50).map(n => n.id);
+  if (confirm(`Are you sure you want to promote ${ids.length} external works to the Assimilated Canon?`)) {
+    store.promoteToCanon(ids);
+  }
+}
 </script>
 
 <style scoped>
@@ -146,6 +164,7 @@ const editSelected = () => { store.openModal(selectedIds.value) }
 .search-input { width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 8px; border-radius: 4px; font-size: 12px; }
 .search-input:focus { outline: none; border-color: #00bfff; }
 .search-controls { display: flex; gap: 5px; margin-bottom: 10px; }
+.badge { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: bold; border: 1px solid transparent; }
 .nav-btn { padding: 6px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 4px; cursor: pointer; font-size: 11px; flex: 1; }
 .nav-btn:hover:not(:disabled) { background: rgba(255,255,255,0.2); }
 .edit-btn { border-color: #f0ad4e; color: #f0ad4e; background: rgba(240, 173, 78, 0.1); font-weight: bold; }

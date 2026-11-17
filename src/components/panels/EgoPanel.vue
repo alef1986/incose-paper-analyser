@@ -122,6 +122,14 @@
             <label><input type="checkbox" v-model="store.vizSettings.showEnv" /> Env</label>
           </div>
         </div>
+
+        <div class="setting-item separator" style="margin-top: 10px; padding-top: 10px;">
+          <label class="checkbox-label" style="color: #ffaa00; font-weight: bold;">
+            <input type="checkbox" v-model="store.vizSettings.hideLeaves" @change="store.recalculateMetrics" /> 
+            Backbone Mode (Hide Orphan Leaves)
+            <span class="help-icon" title="Strips away external nodes cited only once (inDegree = 1). Reveals the structural backbone and cross-citation bridges of the community, drastically reducing browser memory usage.">?</span>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -428,6 +436,7 @@ const runDeduplication = (type) => {
 .collapsible-content { margin-top: 12px; }
 
 .setting-item { display: flex; flex-direction: column; margin-bottom: 10px; }
+.setting-item.separator { border-top: 1px dashed rgba(255, 255, 255, 0.15); }
 .checkbox-label { flex-direction: row; align-items: center; gap: 8px; font-size: 11px; color: #ccc; }
 .s-label { font-size: 10px; color: #aaa; text-transform: uppercase; margin-bottom: 4px; }
 .s-select { background: #000; color: #fff; border: 1px solid #444; padding: 4px; font-size: 11px; border-radius: 3px; }
