@@ -23,10 +23,58 @@
       </div>
     </div>
 
+    <!-- Echo Chambers / Insularity -->
+    <div class="analytics-section">
+      <h3 class="section-title collapsible-header" @click="isEchoChambersOpen = !isEchoChambersOpen">
+        Core Echo Chambers
+        <span class="help-icon" title="Uses Label Propagation to find isolated cliques within INCOSE. 'Insularity' is the percentage of a clique's outgoing citations that point to its own members. High insularity = orthodoxy. Max Size filters out the 'monster component'.">?</span>
+        <span class="toggle-icon">{{ isEchoChambersOpen ? '▼' : '▶' }}</span>
+      </h3>
+      
+      <div v-show="isEchoChambersOpen" class="collapsible-content">
+        <div class="echo-settings" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label style="font-size: 10px; color: #aaa; margin: 0;">Min Size: <b style="color:#fff">{{ store.echoMinSize }}</b></label>
+            <input type="range" v-model.number="store.echoMinSize" min="3" max="50" style="width: 100px; height: 4px;" />
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label style="font-size: 10px; color: #aaa; margin: 0;">Max Size: <b style="color:#fff">{{ store.echoMaxSize }}</b></label>
+            <input type="range" v-model.number="store.echoMaxSize" min="10" max="2000" step="10" style="width: 100px; height: 4px;" />
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label style="font-size: 10px; color: #aaa; margin: 0;">Insularity: <b style="color:#d9534f">{{ (store.echoMinInsularity * 100).toFixed(0) }}%</b></label>
+            <input type="range" v-model.number="store.echoMinInsularity" min="0.1" max="1.0" step="0.05" style="width: 100px; height: 4px;" />
+          </div>
+        </div>
+
+        <div v-if="store.echoChambers.length === 0" class="empty-list-notice">
+          No highly insular cliques found.
+        </div>
+        <ul v-else class="top-list echo-list" style="max-height: 200px; overflow-y: auto;">
+          <li 
+            v-for="(chamber, idx) in store.echoChambers" 
+            :key="chamber.id"
+            :class="{ 'is-focused': store.focusedClique && store.focusedClique.id === chamber.id }"
+            @click="store.setFocusedClique(chamber)"
+          >
+            <div style="display: flex; flex-direction: column; width: 100%;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: #00bfff; font-weight: bold; font-size: 11px;">Clique #{{ idx + 1 }} ({{ chamber.size }} papers)</span>
+                <span class="badge" style="background: rgba(217, 83, 79, 0.2); color: #d9534f; border-color: #d9534f;">Insularity: {{ (chamber.insularity * 100).toFixed(1) }}%</span>
+              </div>
+              <span style="font-size: 10px; color: #aaa; margin-bottom: 2px;"><b>Top Authors:</b> {{ chamber.topAuthors }}</span>
+              <span style="font-size: 10px; color: #888;"><b>Anchor Paper:</b> <i style="color:#ccc;">{{ chamber.topPaperTitle.length > 40 ? chamber.topPaperTitle.substring(0,37)+'...' : chamber.topPaperTitle }}</i></span>
+              <span style="font-size: 9px; color: #666; margin-top: 4px;">{{ chamber.internalLinks }} internal refs | {{ chamber.totalEnvOut }} external refs</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
     <!-- Top Hubs Collapsible Panel -->
     <div class="analytics-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
       <h3 class="section-title collapsible-header" @click="isTopHubsOpen = !isTopHubsOpen">
-        {{ hasActiveFilters ? 'Context Subgraph Hubs' : 'Top Hubs (Filtered)' }}
+        {{ (hasActiveFilters || store.focusedClique) ? (store.focusedClique ? 'Clique Subgraph Hubs' : 'Context Subgraph Hubs') : 'Top Hubs (Filtered)' }}
         <span class="toggle-icon">{{ isTopHubsOpen ? '▼' : '▶' }}</span>
       </h3>
       
@@ -43,11 +91,11 @@
         <SearchPanel v-show="isAdvSearchOpen" />
 
         <!-- Two distinct scrollable lists when filters are active -->
-        <template v-if="hasActiveFilters">
+        <template v-if="hasActiveFilters || store.focusedClique">
           <!-- Target Environment -->
           <div class="split-list-section">
             <div class="split-list-header">
-              <span class="split-title env-text">Target Environment</span>
+              <span class="split-title env-text">{{ store.focusedClique ? 'Clique Environment' : 'Target Environment' }}</span>
               <span class="split-count">({{ filteredEnvNodesBySelection.length }})</span>
             </div>
             <div class="metric-card top-list-container">
@@ -72,7 +120,7 @@
           <!-- Citing Core -->
           <div class="split-list-section">
             <div class="split-list-header">
-              <span class="split-title core-text">Citing Core</span>
+              <span class="split-title core-text">{{ store.focusedClique ? 'Clique Members' : 'Citing Core' }}</span>
               <span class="split-count">({{ citingCoreNodesForSelection.length }})</span>
             </div>
             <div class="metric-card top-list-container">
@@ -85,7 +133,7 @@
                   @click="handleNodeClick(item.node.id, citingCoreNodesForSelection.map(i => i.node))"
                 >
                   <span :style="{ color: getTextColor(item.node.type) }">{{ truncateTitle(item.node.title) }}</span>
-                  <span class="badge">{{ item.sectorOutDegree }}</span>
+                  <span class="badge">{{ store.focusedClique ? item.globalInDegree : item.sectorOutDegree }}</span>
                 </li>
                 <li v-if="citingCoreNodesForSelection.length === 0" class="empty-list-notice">
                   No citing core nodes
@@ -140,6 +188,7 @@ import DiffusionPanel from './DiffusionPanel.vue'
 
 const store = useGraphStore()
 const isFilterCategoriesOpen = ref(false)
+const isEchoChambersOpen = ref(false)
 const isTopHubsOpen = ref(true)
 const isAdvSearchOpen = ref(false)
 
@@ -258,6 +307,7 @@ watch(
     () => store.displayFilters,
     () => store.selectedISSNs,
     () => store.focusedNodeId,
+    () => store.focusedClique,
     listSearchQuery
   ],
   () => {
@@ -287,7 +337,7 @@ const openEditModal = () => {
   if (!store.focusedNodeId) return
   let context = currentContextList.value
   if (!context || context.length === 0) {
-    if (hasActiveFilters.value) {
+    if (hasActiveFilters.value || store.focusedClique) {
       if (store.filteredEnvNodesBySelection.some(i => i.node.id === store.focusedNodeId)) {
         context = store.filteredEnvNodesBySelection.map(i => i.node)
       } else if (store.citingCoreNodesForSelection.some(i => i.node.id === store.focusedNodeId)) {
@@ -313,6 +363,26 @@ h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(
 .collapsible-header:hover { color: #00bfff; }
 .toggle-icon { font-size: 10px; color: #888; transition: transform 0.2s; }
 .collapsible-content { margin-top: 12px; }
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #2a2a3a;
+  color: #aaa;
+  font-size: 10px;
+  cursor: help;
+  margin-left: 6px;
+  border: 1px solid #555;
+  user-select: none;
+}
+.help-icon:hover {
+  background: #3a3a4a;
+  color: #fff;
+  border-color: #00bfff;
+}
 .metric-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 12px; border-radius: 6px; margin-bottom: 12px; text-align: center; flex-shrink: 0; }
 .metric-title { font-size: 10px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; }
 .metric-value { font-size: 20px; font-weight: bold; color: #00bfff; }
@@ -438,6 +508,11 @@ h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(
   background: rgba(255, 170, 0, 0.2);
   border-left: 3px solid #ffaa00;
   padding-left: 2px;
+}
+.echo-list li.is-focused {
+  background: rgba(155, 89, 182, 0.2);
+  border-left: 3px solid #9b59b6;
+  padding-left: 5px;
 }
 
 /* Стили кнопки */

@@ -39,6 +39,10 @@ export const useGraphStore = defineStore('graph', {
     topNodes: [],
     
     focusedNodeId: null,
+    focusedClique: null,
+    echoMinSize: 4,
+    echoMaxSize: 500,
+    echoMinInsularity: 0.4,
     isVizActive: false,
     activeNodeIds: new Set(),
     citationFrequencyFilter: false,
@@ -315,7 +319,17 @@ export const useGraphStore = defineStore('graph', {
       this.topNodes = activeNodesArr.sort((a, b) => b.inDegree - a.inDegree)
     },
 
+    setFocusedClique(cliqueObj) {
+      if (this.focusedClique && cliqueObj && this.focusedClique.id === cliqueObj.id) {
+        this.focusedClique = null
+      } else {
+        this.focusedClique = cliqueObj
+        this.focusedNodeId = null
+      }
+    },
+
     setFocusedNode(nodeId) {
+      this.focusedClique = null
       if (this.focusedNodeId === nodeId) {
         this.focusedNodeId = null
       } else {
@@ -647,7 +661,27 @@ export const useGraphStore = defineStore('graph', {
     },
 
     filteredEnvNodesBySelection(state) {
-      if (!state.graphModel || !state.activeFilters.taxonomy) return [];
+      if (!state.graphModel) return [];
+
+      if (state.focusedClique) {
+        const members = new Set(state.focusedClique.members || []);
+        const targetMap = new Map();
+        state.graphModel.links.forEach(l => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          if (members.has(s)) {
+            const tNode = state.graphModel.nodes.get(t);
+            if (tNode && tNode.type !== 'incose_source' && tNode.type !== 'irrelevant') {
+              targetMap.set(t, (targetMap.get(t) || 0) + 1);
+            }
+          }
+        });
+        return Array.from(targetMap.entries())
+          .map(([id, count]) => ({ node: state.graphModel.nodes.get(id), localInDegree: count }))
+          .sort((a,b) => b.localInDegree - a.localInDegree);
+      }
+
+      if (!state.activeFilters.taxonomy) return [];
 
       const { level, name, pathString } = state.activeFilters.taxonomy;
       const validTargetIds = new Set();
@@ -717,7 +751,23 @@ export const useGraphStore = defineStore('graph', {
     },
 
     citingCoreNodesForSelection(state) {
-      if (!state.graphModel || !state.activeFilters.taxonomy) return [];
+      if (!state.graphModel) return [];
+
+      if (state.focusedClique) {
+        const members = state.focusedClique.members || [];
+        const list = members.map(id => {
+          const node = state.graphModel.nodes.get(id);
+          const inDeg = node?.inDegree || 0;
+          return {
+            node,
+            sectorOutDegree: inDeg,
+            globalInDegree: inDeg
+          };
+        }).filter(i => i.node);
+        return list; // Ignore search filter here for simplicity, or apply it if you prefer
+      }
+
+      if (!state.activeFilters.taxonomy) return [];
 
       const envNodes = this.filteredEnvNodesBySelection;
       if (!envNodes || envNodes.length === 0) return [];
@@ -769,6 +819,142 @@ export const useGraphStore = defineStore('graph', {
       });
 
       return result;
+    },
+
+    echoChambers(state) {
+      if (!state.graphModel) return [];
+      
+      // 1. Extract Core Nodes & Build Undirected Adjacency
+      const coreNodes = [];
+      const adj = new Map();
+      state.graphModel.nodes.forEach(n => {
+        if (n.type === 'incose_source') {
+          coreNodes.push(n.id);
+          adj.set(n.id, []);
+        }
+      });
+
+      state.graphModel.links.forEach(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        if (adj.has(s) && adj.has(t)) {
+          adj.get(s).push(t);
+          adj.get(t).push(s); // Undirected for community detection
+        }
+      });
+
+      // 2. Label Propagation Algorithm (LPA)
+      const labels = new Map();
+      coreNodes.forEach(id => labels.set(id, id));
+
+      for (let iter = 0; iter < 20; iter++) {
+        let changed = false;
+        const nodes = [...coreNodes].sort(() => Math.random() - 0.5); // Shuffle
+        for (const node of nodes) {
+          const neighbors = adj.get(node);
+          if (neighbors.length === 0) continue;
+          
+          const labelCounts = new Map();
+          for (const neighbor of neighbors) {
+            const l = labels.get(neighbor);
+            labelCounts.set(l, (labelCounts.get(l) || 0) + 1);
+          }
+          
+          let maxLabel = labels.get(node);
+          let maxCount = 0;
+          for (const [l, count] of labelCounts.entries()) {
+            if (count > maxCount) {
+              maxCount = count;
+              maxLabel = l;
+            }
+          }
+          
+          if (labels.get(node) !== maxLabel) {
+            labels.set(node, maxLabel);
+            changed = true;
+          }
+        }
+        if (!changed) break;
+      }
+
+      // 3. Group Communities
+      const communities = new Map();
+      for (const [node, label] of labels.entries()) {
+        if (!communities.has(label)) communities.set(label, []);
+        communities.get(label).push(node);
+      }
+
+      // 4. Calculate Insularity
+      const results = [];
+      for (const [label, members] of communities.entries()) {
+        if (members.length < state.echoMinSize || members.length > state.echoMaxSize) continue; // Ignore tiny isolates or monster component
+
+        let internalLinks = 0;
+        let totalOutgoing = 0;
+        let totalEnvOut = 0;
+        const memberSet = new Set(members);
+        
+        members.forEach(m => {
+           const outLinks = state.graphModel.adjacencyList.get(m) || [];
+           outLinks.forEach(l => {
+             const s = typeof l.source === 'object' ? l.source.id : l.source;
+             const t = typeof l.target === 'object' ? l.target.id : l.target;
+             if (s === m) {
+               totalOutgoing++;
+               if (memberSet.has(t)) internalLinks++;
+               
+               const tNode = state.graphModel.nodes.get(t);
+               if (tNode && tNode.type !== 'incose_source' && tNode.type !== 'irrelevant') {
+                 totalEnvOut++;
+               }
+             }
+           });
+        });
+
+        const insularity = totalOutgoing > 0 ? (internalLinks / totalOutgoing) : 0;
+        
+        // Filter for highly insular chambers (e.g. > 50% internal citing)
+        if (insularity >= state.echoMinInsularity) {
+          const authorsMap = new Map();
+          let topPaper = null;
+          let maxIn = -1;
+          
+          members.forEach(m => {
+             const node = state.graphModel.nodes.get(m);
+             if (node) {
+               if (node.inDegree > maxIn) {
+                 maxIn = node.inDegree;
+                 topPaper = node;
+               }
+               const auths = (node.authors || 'Unknown').split(', ');
+               auths.forEach(a => {
+                 if (a && a !== 'Unknown') authorsMap.set(a, (authorsMap.get(a) || 0) + 1);
+               });
+             }
+          });
+          
+          const topAuthors = Array.from(authorsMap.entries())
+            .sort((a,b) => b[1] - a[1])
+            .slice(0, 2)
+            .map(x => x[0])
+            .join(', ');
+
+          results.push({
+            id: label,
+            size: members.length,
+            insularity,
+            internalLinks,
+            totalOutgoing,
+            totalEnvOut,
+            topPaperTitle: topPaper ? topPaper.title : 'Unknown',
+            topPaperId: topPaper ? topPaper.id : null,
+            topAuthors: topAuthors || 'Unknown',
+            members: members
+          });
+        }
+      }
+
+      return results.sort((a, b) => b.insularity - a.insularity);
     }
   }
 })

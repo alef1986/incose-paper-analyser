@@ -152,6 +152,46 @@ export class Graph {
         };
     }
 
+    getCliqueNetwork(cliqueMembersSet) {
+        const subNodesMap = new Map();
+        const subLinksSet = new Set();
+        
+        // Add all clique members
+        cliqueMembersSet.forEach(id => {
+            const node = this.nodes.get(id);
+            if (node) subNodesMap.set(id, node);
+        });
+
+        // Add 1-hop environment targets
+        this.links.forEach(l => {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            if (cliqueMembersSet.has(s)) {
+                const tNode = this.nodes.get(t);
+                if (tNode && tNode.type !== 'irrelevant') {
+                    subNodesMap.set(t, tNode);
+                }
+            }
+        });
+
+        // Keep all links between collected nodes
+        subNodesMap.forEach((_, nId) => {
+            const adj = this.adjacencyList.get(nId) || [];
+            adj.forEach(l => {
+                const s = typeof l.source === 'object' ? l.source.id : l.source;
+                const t = typeof l.target === 'object' ? l.target.id : l.target;
+                if (subNodesMap.has(s) && subNodesMap.has(t)) {
+                    subLinksSet.add(l);
+                }
+            });
+        });
+
+        return {
+            nodes: Array.from(subNodesMap.values()).map(n => ({ ...n, pubType: n.pubType })),
+            links: Array.from(subLinksSet).map(l => ({ ...l }))
+        };
+    }
+
     getFilteredGlobalNetwork(filteredCoreNodes, store, vizSettings) {
         const subNodesMap = new Map();
         const subLinksSet = new Set();

@@ -16,12 +16,19 @@
 
     <!-- НОВАЯ ЛЕГЕНДА: Показывается только в развернутом виде -->
     <div class="viewport-legend" v-if="store.mainView === 'graph' && store.graphModel">
-      <h4 class="legend-title">Graph Taxonomy</h4>
-      <div class="legend-item"><span class="color-dot incose"></span> Core (INCOSE)</div>
-      <div class="legend-item"><span class="color-dot canon"></span> Assimilated Canon</div>
-      <div class="legend-item"><span class="color-dot target"></span> Environment (External)</div>
-      <div class="legend-item"><span class="color-dot irrel"></span> Not Relevant</div>
-      <div class="legend-item" v-if="store.focusedNodeId"><span class="color-dot ego"></span> Focal Node (Ego)</div>
+      <h4 class="legend-title">{{ store.focusedClique ? 'Clique Taxonomy' : 'Graph Taxonomy' }}</h4>
+      <template v-if="store.focusedClique">
+        <div class="legend-item"><span class="color-dot clique-member"></span> Clique Member</div>
+        <div class="legend-item"><span class="color-dot incose"></span> Other Core</div>
+        <div class="legend-item"><span class="color-dot target"></span> Environment</div>
+      </template>
+      <template v-else>
+        <div class="legend-item"><span class="color-dot incose"></span> Core (INCOSE)</div>
+        <div class="legend-item"><span class="color-dot canon"></span> Assimilated Canon</div>
+        <div class="legend-item"><span class="color-dot target"></span> Environment (External)</div>
+        <div class="legend-item"><span class="color-dot irrel"></span> Not Relevant</div>
+        <div class="legend-item" v-if="store.focusedNodeId"><span class="color-dot ego"></span> Focal Node (Ego)</div>
+      </template>
     </div>
 
     <div v-if="tooltip.node && store.vizSettings.enableTooltip" class="custom-tooltip" :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }" @mouseenter="isHoveringTooltip = true" @mouseleave="hideTooltip">
@@ -205,6 +212,10 @@ const convertToRGBA = (hex, alpha) => {
 }
 
 const getNodeColor = (node) => {
+  if (store.focusedClique && store.focusedClique.members && store.focusedClique.members.includes(node.id)) {
+    return convertToRGBA('#9b59b6', 1.0)
+  }
+
   let baseColor = '#555566'
   if (node.id === store.focusedNodeId) baseColor = '#ffaa00'
   else if (node.type === 'incose_source') baseColor = '#00bfff'
@@ -289,15 +300,15 @@ const initGraph = () => {
           const isSourceExcluded = sourceNode ? isExcludedByFilter(sourceNode) : false
           const isTargetExcluded = targetNode ? isExcludedByFilter(targetNode) : false
           if (isSourceExcluded || isTargetExcluded) {
-            return 0.1
+            return 0.02
           } else {
-            return 0.6
+            return 0.2
           }
         }
       }
-      return 0.4
+      return 0.2
     })                
-    .linkDirectionalArrowLength(3.5)
+    .linkDirectionalArrowLength(1.5)
     .linkDirectionalArrowRelPos(1)
     .onNodeClick(node => { store.setFocusedNode(node.id); hideTooltip() })
     .onNodeHover(node => {
@@ -439,6 +450,31 @@ const proceedWithGraphData = (data) => {
   }
 
   Graph.graphData(data)
+
+  if (store.focusedClique) {
+    const membersSet = new Set(store.focusedClique.members);
+    
+    // 1. Weak repulsion inside the clique, strong outside
+    Graph.d3Force('charge').strength(node => membersSet.has(node.id) ? -10 : -60);
+    
+    // 2. Extremely short and strong springs inside the clique
+    Graph.d3Force('link').distance(link => {
+      const s = typeof link.source === 'object' ? link.source.id : link.source;
+      const t = typeof link.target === 'object' ? link.target.id : link.target;
+      if (membersSet.has(s) && membersSet.has(t)) return 1;
+      return 150; 
+    }).strength(link => {
+      const s = typeof link.source === 'object' ? link.source.id : link.source;
+      const t = typeof link.target === 'object' ? link.target.id : link.target;
+      if (membersSet.has(s) && membersSet.has(t)) return 2.0;
+      return 0.1;
+    });
+  } else {
+    // Reset to defaults
+    if (defaultChargeForce) Graph.d3Force('charge', defaultChargeForce);
+    if (defaultLinkForce) Graph.d3Force('link', defaultLinkForce);
+  }
+
   Graph.nodeColor(Graph.nodeColor())
   Graph.nodeVal(Graph.nodeVal())
   Graph.nodeOpacity(Graph.nodeOpacity())
@@ -501,7 +537,10 @@ const updateGraphData = () => {
 
   let data
 
-  if (store.focusedNodeId) {
+  if (store.focusedClique) {
+    const membersSet = new Set(store.focusedClique.members)
+    data = store.graphModel.getCliqueNetwork(membersSet)
+  } else if (store.focusedNodeId) {
     // 1. Если выбран узел в Top Hubs, то к окружению должен применяться фильтр года выхода и отраслей.
     data = store.graphModel.getEgoNetwork(store.focusedNodeId, store, store.vizSettings)
   } else {
@@ -538,6 +577,7 @@ const updateGraphData = () => {
 // Watch everything that affects the rendered data structure
 watch([
   () => store.focusedNodeId, 
+  () => store.focusedClique,
   () => store.vizSettings,
   () => store.selectedISSNs,
   () => store.displayFilters,
@@ -722,6 +762,7 @@ onBeforeUnmount(() => {
 .legend-item { display: flex; align-items: center; font-size: 11px; color: #ccc; margin-bottom: 6px; }
 .legend-item:last-child { margin-bottom: 0; }
 .color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; display: inline-block; }
+.color-dot.clique-member { background: #9b59b6; box-shadow: 0 0 5px #9b59b6; }
 .color-dot.incose { background: #00bfff; }
 .color-dot.canon { background: #5cb85c; }
 .color-dot.target { background: #555566; }
