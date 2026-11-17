@@ -104,29 +104,103 @@ export async function runLuhmannAnalysis(nodeId, graphModel) {
             return results;
         }
 
-        // For each author, check if they have published in INCOSE journals
-        for (const auth of authorships) {
+        // Limit checking up to 25 authors
+        const authorsToCheck = authorships.slice(0, 25);
+
+        // Helper to check a single author
+        const checkSingleAuthor = async (auth) => {
             const authorId = auth.author?.id;
             const authorName = auth.author?.display_name || "Unknown";
             
-            if (!authorId) continue;
+            if (!authorId) {
+                return { name: authorName, isGatekeeper: false, incosePapers: 0 };
+            }
 
             const filterQuery = `author.id:${authorId},primary_location.source.issn:${INCOSE_ISSNS}`;
             const checkUrl = `https://api.openalex.org/works?filter=${filterQuery}&select=id&per-page=1&mailto=${POLITE_EMAIL}`;
-            
-            const checkRes = await fetch(checkUrl, { headers: getOpenAlexHeaders(POLITE_HEADER) });
-            if (!checkRes.ok) continue;
-            
-            const checkData = await checkRes.json();
-            const isGatekeeper = checkData.meta?.count > 0;
-            
-            results.gatekeepers.authors.push({
-                name: authorName,
-                isGatekeeper: isGatekeeper,
-                incosePapers: checkData.meta?.count || 0
-            });
 
-            if (isGatekeeper) results.gatekeepers.hasGatekeeper = true;
+            try {
+                let checkRes = await fetch(checkUrl, { headers: getOpenAlexHeaders(POLITE_HEADER) });
+                if (checkRes.status === 429) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    checkRes = await fetch(checkUrl, { headers: getOpenAlexHeaders(POLITE_HEADER) });
+                }
+                if (!checkRes.ok) {
+                    return { name: authorName, isGatekeeper: false, incosePapers: 0 };
+                }
+                
+                const checkData = await checkRes.json();
+                const count = checkData.meta?.count || 0;
+                return {
+                    name: authorName,
+                    isGatekeeper: count > 0,
+                    incosePapers: count
+                };
+            } catch {
+                return { name: authorName, isGatekeeper: false, incosePapers: 0 };
+            }
+        };
+
+        // Batch optimization: extract clean author IDs (up to 25)
+        const cleanIds = authorsToCheck
+            .map(auth => auth.author?.id ? String(auth.author.id).replace(/^https?:\/\/openalex\.org\//i, '') : null)
+            .filter(Boolean);
+
+        let skipIndividualChecks = false;
+
+        // If multiple authors, perform a fast batch probe (up to 25 author IDs)
+        if (cleanIds.length > 1) {
+            try {
+                const batchFilter = `author.id:${cleanIds.join('|')},primary_location.source.issn:${INCOSE_ISSNS}`;
+                const batchUrl = `https://api.openalex.org/works?filter=${batchFilter}&select=id&per-page=1&mailto=${POLITE_EMAIL}`;
+                let batchRes = await fetch(batchUrl, { headers: getOpenAlexHeaders(POLITE_HEADER) });
+                if (batchRes.status === 429) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    batchRes = await fetch(batchUrl, { headers: getOpenAlexHeaders(POLITE_HEADER) });
+                }
+                if (batchRes.ok) {
+                    const batchData = await batchRes.json();
+                    if ((batchData.meta?.count || 0) === 0) {
+                        skipIndividualChecks = true;
+                    }
+                }
+            } catch {
+                // Fallback to concurrent individual checks
+            }
+        }
+
+        if (skipIndividualChecks) {
+            // Fast path: none of the co-authors published in INCOSE journals
+            authorsToCheck.forEach(auth => {
+                results.gatekeepers.authors.push({
+                    name: auth.author?.display_name || "Unknown",
+                    isGatekeeper: false,
+                    incosePapers: 0
+                });
+            });
+            results.gatekeepers.hasGatekeeper = false;
+        } else {
+            // Run concurrent requests with concurrency pool (up to 5 parallel requests)
+            const CONCURRENCY_LIMIT = 5;
+            const authorResults = Array.from({ length: authorsToCheck.length });
+            let nextIdx = 0;
+
+            const runWorker = async () => {
+                while (nextIdx < authorsToCheck.length) {
+                    const idx = nextIdx++;
+                    authorResults[idx] = await checkSingleAuthor(authorsToCheck[idx]);
+                }
+            };
+
+            const workerCount = Math.min(CONCURRENCY_LIMIT, authorsToCheck.length);
+            await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+            authorResults.forEach(res => {
+                if (res) {
+                    results.gatekeepers.authors.push(res);
+                    if (res.isGatekeeper) results.gatekeepers.hasGatekeeper = true;
+                }
+            });
         }
         
         results.gatekeepers.status = results.gatekeepers.hasGatekeeper ? 'Gatekeeper Confirmed' : 'External Origin';

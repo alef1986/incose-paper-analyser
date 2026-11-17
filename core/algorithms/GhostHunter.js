@@ -135,14 +135,14 @@ export function formatOpenAlexWork(work) {
   issns = Array.from(new Set(issns)).filter(Boolean)
   if (issns.length === 0) issns = ['Unknown']
 
-  // Extract Authors as String array
+  // Extract Authors as comma-separated String
   let authors = []
   if (Array.isArray(work.authorships)) {
     authors = work.authorships
       .map(a => a.author?.display_name || a.raw_author_name)
       .filter(Boolean)
   }
-  if (authors.length === 0) authors = ['Unknown']
+  const authorString = authors.length > 0 ? authors.join(', ') : 'Unknown'
 
   // Extract Taxonomy
   const topic = work.primary_topic || {}
@@ -164,8 +164,8 @@ export function formatOpenAlexWork(work) {
     title: String(work.title || 'Untitled'),
     year: pubYear,
     issns: issns.map(String),
-    type: String(work.type || 'journal-article'),
-    authors: authors.map(String),
+    pubType: String(work.type || 'journal-article'),
+    authors: authorString,
     domain: String(domain),
     field: String(field),
     subfield: String(subfield),

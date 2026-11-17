@@ -5,7 +5,7 @@ export function parseIncoseJson(rawData) {
     const graph = new Graph()
     
     let rawNodes
-    let rawLinks
+    let rawLinks = []
 
     const isRawArray = Array.isArray(rawData);
 

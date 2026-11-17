@@ -2,7 +2,7 @@
 
 export class Node {
     // The parameter list must destructure 'issns = []' rather than the old 'issn'
-    constructor({ id, title, type, justification = "", inDegree = 0, publicationYear = null, issns = [], authors = '', domain = 'Unknown', field = 'Unknown', subfield = 'Unknown' }) {
+    constructor({ id, title, type, justification = "", inDegree = 0, publicationYear = null, issns = [], authors = '', domain = 'Unknown', field = 'Unknown', subfield = 'Unknown', pubType = undefined }) {
         this.id = id;
         this.title = title || id;
         this.type = type || 'external_or_unknown';
@@ -14,6 +14,7 @@ export class Node {
         this.domain = domain;
         this.field = field;
         this.subfield = subfield;
+        this.pubType = pubType;
     }
 
     // Inside class Node:
@@ -97,10 +98,11 @@ export class Graph {
         
         let queue = [{id: centerId, d: 0}];
         let visited = new Set([centerId]);
+        let head = 0;
         
         // 1. Gather all nodes within depth limits based on DIRECTION
-        while(queue.length > 0) {
-            let curr = queue.shift();
+        while (head < queue.length) {
+            const curr = queue[head++];
             let nodeObj = this.nodes.get(curr.id);
             
             if(nodeObj && passesFilters(nodeObj, curr.id === centerId)) {
@@ -145,7 +147,7 @@ export class Graph {
         });
         
         return {
-            nodes: Array.from(subNodesMap.values()).map(n => ({ ...n })),
+            nodes: Array.from(subNodesMap.values()).map(n => ({ ...n, pubType: n.pubType })),
             links: Array.from(subLinksSet).map(l => ({ ...l }))
         };
     }
@@ -185,9 +187,10 @@ export class Graph {
         // Initialize queue with all filtered core nodes at depth 0
         let queue = filteredCoreNodes.map(n => ({ id: n.id, d: 0 }));
         let visited = new Set(filteredCoreNodes.map(n => n.id));
+        let head = 0;
         
-        while (queue.length > 0) {
-            let curr = queue.shift();
+        while (head < queue.length) {
+            const curr = queue[head++];
             let nodeObj = this.nodes.get(curr.id);
             
             if (nodeObj && passesFilters(nodeObj, coreIdsSet.has(curr.id))) {
@@ -231,7 +234,7 @@ export class Graph {
         });
         
         return {
-            nodes: Array.from(subNodesMap.values()).map(n => ({ ...n })),
+            nodes: Array.from(subNodesMap.values()).map(n => ({ ...n, pubType: n.pubType })),
             links: Array.from(subLinksSet).map(l => ({ ...l }))
         };
     }
