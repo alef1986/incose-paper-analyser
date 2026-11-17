@@ -59,6 +59,7 @@ export const useGraphStore = defineStore('graph', {
     
     isModalOpen: false,
     inspectedNodeIds: [], 
+    modalContextList: [], 
 
     displayFilters: {
       incose_source: true,
@@ -297,14 +298,20 @@ export const useGraphStore = defineStore('graph', {
     },
     toggleViz() { this.isVizActive = !this.isVizActive },
     
-    openModal(nodeIds) {
+    openModal(nodeIds, contextList = null) {
       this.inspectedNodeIds = Array.isArray(nodeIds) ? nodeIds : [nodeIds]
+      if (contextList && Array.isArray(contextList) && contextList.length > 0) {
+        this.modalContextList = contextList
+      } else {
+        this.modalContextList = []
+      }
       this.isModalOpen = true
       this.analyticsResult = null
     },
     closeModal() {
       this.isModalOpen = false
       this.inspectedNodeIds = []
+      this.modalContextList = []
     },
     
     updateNodeAttributes(newAttributes) {

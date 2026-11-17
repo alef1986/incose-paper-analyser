@@ -351,6 +351,21 @@ const batchReport = ref(null)
 
 // Active Context Navigation List (combined split lists when filters are active, or filtered topNodes fallback)
 const activeContextNodes = computed(() => {
+  if (store.modalContextList && store.modalContextList.length > 0) {
+    const rawList = store.modalContextList.map(item => {
+      if (typeof item === 'string') return store.graphModel?.nodes.get(item) || { id: item }
+      return (item && item.node) ? item.node : item
+    }).filter(Boolean)
+
+    if (store.inspectedNodes.length > 0) {
+      const currentId = store.inspectedNodes[0].id
+      if (!rawList.some(n => n.id === currentId)) {
+        return [store.inspectedNodes[0], ...rawList]
+      }
+    }
+    return rawList
+  }
+
   const hasFilters = !!store.activeFilters.taxonomy || store.activeFilters.years.length > 0
   let list = []
 
@@ -562,12 +577,18 @@ const resolveConfirm = (res) => { showConfirm.value = false; if (res === 'save')
 
 const executeAction = (actionType, payload) => { 
   if (actionType === 'close') store.closeModal(); 
-  else if (actionType === 'jump') { store.setFocusedNode(payload); store.openModal(payload) }
+  else if (actionType === 'jump') { 
+    store.setFocusedNode(payload); 
+    store.openModal(payload, store.modalContextList.length > 0 ? store.modalContextList : null); 
+  }
   else if (actionType === 'next' || actionType === 'prev') {
     const offset = actionType === 'next' ? 1 : -1;
     const target = activeContextNodes.value[currentIndex.value + offset];
     const targetId = target?.id;
-    if (targetId) { store.setFocusedNode(targetId); store.openModal(targetId); }
+    if (targetId) { 
+      store.setFocusedNode(targetId); 
+      store.openModal(targetId, store.modalContextList.length > 0 ? store.modalContextList : null); 
+    }
   }
 }
 const saveChanges = () => { store.updateNodeAttributes(editForm); isDirty.value = false }

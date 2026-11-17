@@ -173,9 +173,21 @@ const excludedNodeIds = computed(() => {
   return excluded
 })
 
+let rawExcludedSet = new Set()
+
+watch(() => excludedNodeIds.value, (newSet) => {
+  rawExcludedSet = newSet || new Set()
+  if (Graph) {
+    Graph.nodeColor(Graph.nodeColor())
+    Graph.nodeVal(Graph.nodeVal())
+    Graph.linkOpacity(Graph.linkOpacity())
+    Graph.linkWidth(Graph.linkWidth())
+  }
+}, { immediate: true })
+
 const isExcludedByFilter = (node) => {
   if (!node) return false
-  return excludedNodeIds.value.has(node.id)
+  return rawExcludedSet.has(node.id)
 }
 
 const convertToRGBA = (hex, alpha) => {

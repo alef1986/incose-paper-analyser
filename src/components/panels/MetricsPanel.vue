@@ -49,7 +49,7 @@
                   :key="item.node.id" 
                   :id="'list-node-' + item.node.id"
                   :class="{ 'is-focused': store.focusedNodeId === item.node.id }"
-                  @click="handleNodeClick(item.node.id)"
+                  @click="handleNodeClick(item.node.id, store.filteredEnvNodesBySelection.map(i => i.node))"
                 >
                   <span :style="{ color: getTextColor(item.node.type) }">{{ truncateTitle(item.node.title) }}</span>
                   <span class="badge">{{ item.localInDegree }}</span>
@@ -74,7 +74,7 @@
                   :key="item.node.id" 
                   :id="'list-node-' + item.node.id"
                   :class="{ 'is-focused': store.focusedNodeId === item.node.id }"
-                  @click="handleNodeClick(item.node.id)"
+                  @click="handleNodeClick(item.node.id, store.citingCoreNodesForSelection.map(i => i.node))"
                 >
                   <span :style="{ color: getTextColor(item.node.type) }">{{ truncateTitle(item.node.title) }}</span>
                   <span class="badge">{{ item.sectorOutDegree }}</span>
@@ -95,7 +95,7 @@
               :key="node.id" 
               :id="'list-node-' + node.id"
               :class="{ 'is-focused': store.focusedNodeId === node.id }"
-              @click="handleNodeClick(node.id)"
+              @click="handleNodeClick(node.id, unifiedDisplayList)"
             >
               <span :style="{ color: getTextColor(node.type) }">{{ truncateTitle(node.title) }}</span>
               <span class="badge">{{ node.inDegree }}</span>
@@ -111,7 +111,7 @@
       <button 
         class="btn edit-node-btn" 
         :disabled="!store.focusedNodeId"
-        @click="store.openModal(store.focusedNodeId)"
+        @click="openEditModal"
       >
         <span v-if="store.focusedNodeId">✎ Edit Selected Node</span>
         <span v-else>Select a node to edit</span>
@@ -226,9 +226,32 @@ watch(() => store.focusedNodeId, async (newId) => {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
 })
 
-const handleNodeClick = (nodeId) => {
-  // ФИКС: Только фокусируем узел, больше никакого автоматического вызова окна
+const currentContextList = ref(null)
+
+const handleNodeClick = (nodeId, contextList = null) => {
   store.setFocusedNode(nodeId)
+  if (contextList) {
+    currentContextList.value = contextList
+    store.modalContextList = contextList
+  }
+}
+
+const openEditModal = () => {
+  if (!store.focusedNodeId) return
+  let context = currentContextList.value
+  if (!context || context.length === 0) {
+    if (hasActiveFilters.value) {
+      if (store.filteredEnvNodesBySelection.some(i => i.node.id === store.focusedNodeId)) {
+        context = store.filteredEnvNodesBySelection.map(i => i.node)
+      } else if (store.citingCoreNodesForSelection.some(i => i.node.id === store.focusedNodeId)) {
+        context = store.citingCoreNodesForSelection.map(i => i.node)
+      }
+    }
+    if (!context) {
+      context = unifiedDisplayList.value
+    }
+  }
+  store.openModal(store.focusedNodeId, context)
 }
 </script>
 
