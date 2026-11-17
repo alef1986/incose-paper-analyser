@@ -77,6 +77,10 @@
             <label class="setting-item checkbox-label" style="font-size: 10px; margin-top: 4px;"><input type="checkbox" v-model="store.lifespanApplyToCanon" @change="store.recalculateMetrics" /> Apply to Canon (Test Structural Forgetting)</label>
           </div>
         </div>
+
+        <div class="setting-group" style="padding-top: 5px; margin-top: 5px;">
+          <label class="setting-item checkbox-label" style="color: #ffaa00; font-weight: bold;"><input type="checkbox" v-model="store.translatorLensActive" @change="store.recalculateMetrics" /> Translator Lens (Realized Environment)<span class="help-icon" title="Filters out unresonated noise. Shows ONLY external disciplines and citations that were imported by 'True Translators' (Core papers with high external references AND high internal INCOSE citations).">?</span></label>
+        </div>
       </div>
     </div>
 
@@ -178,10 +182,10 @@
     <!-- Компонент диаграммы -->
     <SunburstChart v-if="store.isLoaded" />
 
-    <!-- System Metrics -->
+    <!-- Network Metrics -->
     <div v-if="store.isLoaded" class="analytics-section">
       <h3 class="section-title collapsible-header" @click="isSystemMetricsOpen = !isSystemMetricsOpen">
-        System Metrics
+        Network Metrics
         <span class="toggle-icon">{{ isSystemMetricsOpen ? '▼' : '▶' }}</span>
       </h3>
       

@@ -61,6 +61,7 @@ const buildSunburstData = () => {
     const tNode = store.graphModel.nodes.get(tId)
     
     if (sNode && sNode.type === 'incose_source' && tNode && tNode.type !== 'incose_source' && tNode.type !== 'irrelevant') {
+      if (store.translatorLensActive) { const roleObj = store.nodeRoles.get(sId); if (!roleObj || roleObj.role !== 'True Translator') return; }
       const d = (tNode.domain && tNode.domain !== 'Unknown') ? tNode.domain : null;
       const f = (tNode.field && tNode.field !== 'Unknown') ? tNode.field : 'Other';
       const sf = (tNode.subfield && tNode.subfield !== 'Unknown') ? tNode.subfield : 'Other';
@@ -81,6 +82,7 @@ const buildSunburstData = () => {
     const tNode = store.graphModel.nodes.get(tId)
     
     if (sNode && sNode.type === 'incose_source' && tNode && tNode.type !== 'incose_source' && tNode.type !== 'irrelevant') {
+      if (store.translatorLensActive) { const roleObj = store.nodeRoles.get(sId); if (!roleObj || roleObj.role !== 'True Translator') return; }
       if (store.citationFrequencyFilter || store.uniqueAuthorsFilter || store.activeYearsFilterActive || store.lifespanFilterActive) {
         if (store.activeNodeIds && (!store.activeNodeIds.has(sId) || !store.activeNodeIds.has(tId))) return;
       }
@@ -278,8 +280,13 @@ watch([
   () => store.activeYearsFilterActive,
   () => store.activeYearsCount,
   () => store.lifespanFilterActive,
-  () => store.lifespanCount
+  () => store.lifespanCount,
+  () => store.translatorLensActive
 ], () => { updateChart() }, { deep: true })
+
+watch(() => store.translatorLensActive, () => {
+  updateChart()
+})
 
 watch(() => store.mainView, async () => {
   await nextTick();

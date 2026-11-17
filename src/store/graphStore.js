@@ -27,6 +27,7 @@ export const useGraphStore = defineStore('graph', {
       years: [], 
       taxonomy: null 
     },
+    translatorLensActive: false,
 
     graphModel: null,
     isLoaded: false,
@@ -133,7 +134,6 @@ export const useGraphStore = defineStore('graph', {
       })
 
       const targetCitingCoreNodes = new Map()
-      let originalEdgesCount = 0
       this.graphModel.links.forEach(l => {
         const sId = typeof l.source === 'object' ? l.source.id : l.source
         const tId = typeof l.target === 'object' ? l.target.id : l.target
@@ -148,35 +148,45 @@ export const useGraphStore = defineStore('graph', {
             }
             targetCitingCoreNodes.get(tId).push(sNode)
           }
-
-          const tNode = this.graphModel.nodes.get(tId)
-          if (tNode && tNode.type !== 'irrelevant') {
-            originalEdgesCount++
-          }
         }
       })
 
-      // Сначала посчитаем исходные (original) метрики до применения Citation Frequency фильтра
-      let originalCore = 0, originalCanon = 0, originalEnv = 0
+      // Fix baseline metrics (Original counts)
+      const baselineNodes = new Set();
+      let originalCore = 0, originalCanon = 0, originalEnv = 0;
+      
       this.graphModel.nodes.forEach(n => {
-        const inCount = dynamicInDegree.get(n.id) || 0
+        const inCount = dynamicInDegree.get(n.id) || 0;
         if (n.type === 'incose_source') {
-          if (activeCoreNodes.has(n.id)) originalCore++
-        } else {
-          if (inCount > 0) {
-            if (n.type === 'assimilated_canon') originalCanon++
-            else if (n.type !== 'irrelevant') originalEnv++
+          if (activeCoreNodes.has(n.id)) {
+            baselineNodes.add(n.id);
+            originalCore++;
           }
+        } else if (n.type !== 'irrelevant' && inCount > 0) {
+          baselineNodes.add(n.id);
+          if (n.type === 'assimilated_canon') originalCanon++;
+          else originalEnv++;
         }
-      })
+      });
+
+      let originalEdgesCount = 0;
+      this.graphModel.links.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+        if (baselineNodes.has(sId) && baselineNodes.has(tId)) {
+          originalEdgesCount++;
+        }
+      });
 
       // Теперь формируем набор финально активных узлов
+      const roles = this.translatorLensActive ? this.nodeRoles : null;
       const finalActiveNodes = new Set()
       this.graphModel.nodes.forEach(n => {
         if (n.type === 'irrelevant') return
 
         if (n.type === 'incose_source') {
           if (!activeCoreNodes.has(n.id)) return
+          if (this.translatorLensActive && roles.get(n.id)?.role !== 'True Translator') return;
           if (this.citationFrequencyFilter) {
             const outCount = coreOutDegree.get(n.id) || 0
             if (outCount <= 1) return
@@ -241,6 +251,14 @@ export const useGraphStore = defineStore('graph', {
             const lifespan = maxYear - minYear
             if (lifespan < this.lifespanCount) return
           }
+          if (this.translatorLensActive) {
+            const citingCore = targetCitingCoreNodes.get(n.id) || [];
+            const hasTranslator = citingCore.some(coreNode => {
+              const roleObj = roles.get(coreNode.id);
+              return roleObj && roleObj.role === 'True Translator';
+            });
+            if (!hasTranslator) return;
+          }
           finalActiveNodes.add(n.id)
         }
       })
@@ -292,9 +310,9 @@ export const useGraphStore = defineStore('graph', {
         originalEnvCount: originalEnv,
         originalTotalNodes: originalCore + originalCanon + originalEnv,
         originalTotalEdges: originalEdgesCount,
-        isCitationFilterActive: this.citationFrequencyFilter || this.uniqueAuthorsFilter || this.activeYearsFilterActive || this.lifespanFilterActive
+        isCitationFilterActive: this.citationFrequencyFilter || this.uniqueAuthorsFilter || this.activeYearsFilterActive || this.lifespanFilterActive || this.translatorLensActive
       }
-      this.topNodes = activeNodesArr.sort((a, b) => b.inDegree - a.inDegree).slice(0, 300)
+      this.topNodes = activeNodesArr.sort((a, b) => b.inDegree - a.inDegree)
     },
 
     setFocusedNode(nodeId) {
@@ -420,6 +438,81 @@ export const useGraphStore = defineStore('graph', {
   },
   
   getters: {
+    nodeRoles(state) {
+      if (!state.graphModel) return new Map();
+      const roles = new Map();
+      const envOutMap = new Map();
+      const domainMap = new Map();
+      const indepCoreInMap = new Map();
+
+      // Pre-calculate author sets for core nodes for O(1) intersection checks
+      const authorSets = new Map();
+      state.graphModel.nodes.forEach(n => {
+        if (n.type === 'incose_source') {
+          authorSets.set(n.id, getAuthorSet(n.authors));
+        }
+      });
+
+      const shareAuthors = (idA, idB) => {
+        const setA = authorSets.get(idA);
+        const setB = authorSets.get(idB);
+        if (!setA || !setB) return false;
+        for (const a of setA) {
+          if (setB.has(a)) return true;
+        }
+        return false;
+      };
+
+      // 1. Calculate Env Out-degree and Independent Core In-degree
+      state.graphModel.links.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+        const sNode = state.graphModel.nodes.get(sId);
+        const tNode = state.graphModel.nodes.get(tId);
+        
+        if (!sNode || !tNode) return;
+
+        if (sNode.type === 'incose_source') {
+          if (tNode.type !== 'incose_source' && tNode.type !== 'irrelevant') {
+            // Outgoing to environment
+            envOutMap.set(sId, (envOutMap.get(sId) || 0) + 1);
+            if (!domainMap.has(sId)) domainMap.set(sId, new Map());
+            const d = (tNode.domain && tNode.domain !== 'Unknown') ? tNode.domain : null;
+            if (d) {
+              domainMap.get(sId).set(d, (domainMap.get(sId).get(d) || 0) + 1);
+            }
+          } else if (tNode.type === 'incose_source') {
+            // Core to Core citation -> Check for self-citation!
+            if (!shareAuthors(sId, tId)) {
+              indepCoreInMap.set(tId, (indepCoreInMap.get(tId) || 0) + 1);
+            }
+          }
+        }
+      });
+
+      // 2. Assign Luhmann Roles based on STRICT independent connection
+      state.graphModel.nodes.forEach(n => {
+        if (n.type === 'incose_source') {
+          const cInIndep = indepCoreInMap.get(n.id) || 0;
+          const eOut = envOutMap.get(n.id) || 0;
+          let role = 'Peripheral / Normal';
+          
+          // Strict criteria: Must be cited by at least 2 completely independent core papers
+          if (eOut >= 2 && cInIndep >= 2) role = 'True Translator';
+          else if (eOut >= 5 && cInIndep < 2) role = 'Unresonated Scout';
+          else if (eOut === 0 && cInIndep >= 5) role = 'Orthodox Core';
+
+          let topDomain = 'None';
+          if (domainMap.has(n.id)) {
+            const counts = Array.from(domainMap.get(n.id).entries()).sort((a, b) => b[1] - a[1]);
+            if (counts.length > 0) topDomain = counts[0][0];
+          }
+
+          roles.set(n.id, { role, cInIndep, eOut, topDomain });
+        }
+      });
+      return roles;
+    },
     inspectedNodes(state) {
       if (!state.graphModel) return []
       return state.inspectedNodeIds.map(id => state.graphModel.nodes.get(id)).filter(Boolean)
@@ -591,6 +684,10 @@ export const useGraphStore = defineStore('graph', {
         if (validTargetIds.has(tId)) {
           const sNode = state.graphModel.nodes.get(sId);
           if (sNode && sNode.type === 'incose_source') {
+            if (state.translatorLensActive) {
+              const roleObj = (this.nodeRoles || state.nodeRoles)?.get(sId);
+              if (!roleObj || roleObj.role !== 'True Translator') return;
+            }
             if (!state.activeNodeIds || state.activeNodeIds.size === 0 || state.activeNodeIds.has(sId)) {
               const yRaw = sNode.year || sNode.publicationYear;
               const y = yRaw ? parseInt(yRaw, 10) : null;
@@ -636,6 +733,10 @@ export const useGraphStore = defineStore('graph', {
         if (validEnvIds.has(tId)) {
           const sNode = state.graphModel.nodes.get(sId);
           if (sNode && sNode.type === 'incose_source') {
+            if (state.translatorLensActive) {
+              const roleObj = (this.nodeRoles || state.nodeRoles)?.get(sId);
+              if (!roleObj || roleObj.role !== 'True Translator') return;
+            }
             if (!state.activeNodeIds || state.activeNodeIds.size === 0 || state.activeNodeIds.has(sId)) {
               const yRaw = sNode.year || sNode.publicationYear;
               const y = yRaw ? parseInt(yRaw, 10) : null;

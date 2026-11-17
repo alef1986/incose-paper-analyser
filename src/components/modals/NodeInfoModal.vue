@@ -52,6 +52,15 @@
             </span>
           </span>
         </p>
+        <p class="meta-info" v-if="store.inspectedNodes[0]?.type === 'incose_source' && store.nodeRoles.has(store.inspectedNodes[0].id)">
+          <b>Luhmann Role: </b>
+          <span class="role-badge" :class="store.nodeRoles.get(store.inspectedNodes[0].id).role.split(' ')[0].toLowerCase()">
+            {{ store.nodeRoles.get(store.inspectedNodes[0].id).role }}
+          </span>
+          <span class="role-stats" style="margin-left: 8px; color: #888; font-size: 10px;" title="Independent Core Citations (excluding self-citations)">
+            (Env Out: {{ store.nodeRoles.get(store.inspectedNodes[0].id).eOut }}, Indep. Core In: {{ store.nodeRoles.get(store.inspectedNodes[0].id).cInIndep }})
+          </span>
+        </p>
       </div>
 
       <!-- Batch Node OpenAlex Fetch -->
@@ -956,5 +965,11 @@ a { color: #f0ad4e; text-decoration: none; word-wrap: break-word; }
   padding: 4px 6px;
   border-radius: 3px;
 }
+
+.role-badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+.role-badge.true { background: rgba(255, 170, 0, 0.2); color: #ffaa00; border: 1px solid #ffaa00; }
+.role-badge.unresonated { background: rgba(217, 83, 79, 0.2); color: #d9534f; border: 1px solid #d9534f; }
+.role-badge.orthodox { background: rgba(0, 191, 255, 0.2); color: #00bfff; border: 1px solid #00bfff; }
+.role-badge.peripheral { background: rgba(170, 170, 170, 0.2); color: #aaa; border: 1px solid #aaa; }
 
 </style>
