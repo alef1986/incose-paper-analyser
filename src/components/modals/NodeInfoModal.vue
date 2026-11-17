@@ -12,8 +12,8 @@
         </template>
         <template v-else>
           <button class="nav-btn" :disabled="currentIndex <= 0" @click="attemptAction('prev')">&larr; Prev</button>
-          <span class="nav-counter">Node {{ currentIndex + 1 }} of {{ store.topNodes.length }}</span>
-          <button class="nav-btn" :disabled="currentIndex >= store.topNodes.length - 1" @click="attemptAction('next')">Next &rarr;</button>
+          <span class="nav-counter">Node {{ currentIndex >= 0 ? currentIndex + 1 : '-' }} of {{ activeContextNodes.length }}</span>
+          <button class="nav-btn" :disabled="currentIndex < 0 || currentIndex >= activeContextNodes.length - 1" @click="attemptAction('next')">Next &rarr;</button>
         </template>
       </div>
       
@@ -349,10 +349,55 @@ const isBatchFetching = ref(false)
 const batchProgress = ref(0)
 const batchReport = ref(null)
 
+// Active Context Navigation List (combined split lists when filters are active, or filtered topNodes fallback)
+const activeContextNodes = computed(() => {
+  const hasFilters = !!store.activeFilters.taxonomy || store.activeFilters.years.length > 0
+  let list = []
+
+  if (hasFilters) {
+    const citing = store.citingCoreNodesForSelection.map(item => item.node)
+    const env = store.filteredEnvNodesBySelection.map(item => item.node)
+    const seen = new Set()
+    for (const n of [...citing, ...env]) {
+      if (n && !seen.has(n.id)) {
+        seen.add(n.id)
+        list.push(n)
+      }
+    }
+  }
+
+  // Fallback to filtered topNodes if no context nodes or no active filters
+  if (list.length === 0) {
+    const validCoreIds = new Set(store.filteredCoreNodes.map(n => n.id))
+    list = store.topNodes.filter(n => {
+      if (!store.displayFilters[n.type]) return false
+      const nodeIssns = n.issns || []
+      const hasTracked = nodeIssns.some(i => store.trackedIssns.includes(i))
+      const hasSelected = nodeIssns.some(i => store.selectedISSNs.includes(i))
+      if (hasTracked && !hasSelected) return false
+      if (hasFilters && n.type === 'incose_source') {
+        if (!validCoreIds.has(n.id)) return false
+      }
+      return true
+    })
+  }
+
+  // Prepend current node if not present in the list
+  if (store.inspectedNodes.length > 0) {
+    const currentId = store.inspectedNodes[0].id
+    if (!list.some(n => n.id === currentId)) {
+      list = [store.inspectedNodes[0], ...list]
+    }
+  }
+
+  return list
+})
+
 // Navigation Index
 const currentIndex = computed(() => {
   if (store.isBatchMode || store.inspectedNodes.length === 0) return -1
-  return store.topNodes.findIndex(n => n.id === store.inspectedNodes[0].id)
+  const currentId = store.inspectedNodes[0].id
+  return activeContextNodes.value.findIndex(n => n.id === currentId)
 })
 
 const singleNodeUrl = computed(() => {
@@ -520,7 +565,8 @@ const executeAction = (actionType, payload) => {
   else if (actionType === 'jump') { store.setFocusedNode(payload); store.openModal(payload) }
   else if (actionType === 'next' || actionType === 'prev') {
     const offset = actionType === 'next' ? 1 : -1;
-    const targetId = store.topNodes[currentIndex.value + offset]?.id;
+    const target = activeContextNodes.value[currentIndex.value + offset];
+    const targetId = target?.id;
     if (targetId) { store.setFocusedNode(targetId); store.openModal(targetId); }
   }
 }

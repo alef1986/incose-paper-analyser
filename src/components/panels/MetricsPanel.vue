@@ -28,15 +28,70 @@
     <!-- Top Hubs Collapsible Panel -->
     <div class="analytics-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
       <h3 class="section-title collapsible-header" @click="isTopHubsOpen = !isTopHubsOpen">
-        Top Hubs (Filtered)
+        {{ hasActiveFilters ? 'Context Subgraph Hubs' : 'Top Hubs (Filtered)' }}
         <span class="toggle-icon">{{ isTopHubsOpen ? '▼' : '▶' }}</span>
       </h3>
       
       <div v-show="isTopHubsOpen" class="collapsible-content" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 10px;">
-        <div class="metric-card top-list-container" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0; margin-top: 5px;">
-          <ul class="top-list" style="flex: 1; overflow-y: auto;">
+        
+        <!-- Two distinct scrollable lists when filters are active -->
+        <template v-if="hasActiveFilters">
+          <!-- Target Environment -->
+          <div class="split-list-section">
+            <div class="split-list-header">
+              <span class="split-title env-text">Target Environment</span>
+              <span class="split-count">({{ store.filteredEnvNodesBySelection.length }})</span>
+            </div>
+            <div class="metric-card top-list-container">
+              <ul class="top-list" @scroll="handleScroll">
+                <li 
+                  v-for="item in visibleTargetEnvNodes" 
+                  :key="item.node.id" 
+                  :id="'list-node-' + item.node.id"
+                  :class="{ 'is-focused': store.focusedNodeId === item.node.id }"
+                  @click="handleNodeClick(item.node.id)"
+                >
+                  <span :style="{ color: getTextColor(item.node.type) }">{{ truncateTitle(item.node.title) }}</span>
+                  <span class="badge">{{ item.localInDegree }}</span>
+                </li>
+                <li v-if="store.filteredEnvNodesBySelection.length === 0" class="empty-list-notice">
+                  No target environment nodes
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Citing Core -->
+          <div class="split-list-section">
+            <div class="split-list-header">
+              <span class="split-title core-text">Citing Core</span>
+              <span class="split-count">({{ store.citingCoreNodesForSelection.length }})</span>
+            </div>
+            <div class="metric-card top-list-container">
+              <ul class="top-list" @scroll="handleScroll">
+                <li 
+                  v-for="item in visibleCitingCoreNodes" 
+                  :key="item.node.id" 
+                  :id="'list-node-' + item.node.id"
+                  :class="{ 'is-focused': store.focusedNodeId === item.node.id }"
+                  @click="handleNodeClick(item.node.id)"
+                >
+                  <span :style="{ color: getTextColor(item.node.type) }">{{ truncateTitle(item.node.title) }}</span>
+                  <span class="badge">{{ item.sectorOutDegree }}</span>
+                </li>
+                <li v-if="store.citingCoreNodesForSelection.length === 0" class="empty-list-notice">
+                  No citing core nodes
+                </li>
+              </ul>
+            </div>
+          </div>
+        </template>
+
+        <!-- Fallback: Global top nodes when no filters are active -->
+        <div v-else class="metric-card top-list-container" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0; margin-top: 5px;">
+          <ul class="top-list" style="flex: 1; overflow-y: auto;" @scroll="handleScroll">
             <li 
-              v-for="node in unifiedDisplayList" 
+              v-for="node in visibleGlobalNodes" 
               :key="node.id" 
               :id="'list-node-' + node.id"
               :class="{ 'is-focused': store.focusedNodeId === node.id }"
@@ -47,6 +102,7 @@
             </li>
           </ul>
         </div>
+
       </div>
     </div>
 
@@ -74,6 +130,20 @@ import DiffusionPanel from './DiffusionPanel.vue'
 const store = useGraphStore()
 const isFilterCategoriesOpen = ref(false)
 const isTopHubsOpen = ref(true)
+
+// Infinite scroll visible count
+const visibleCount = ref(100)
+
+const hasActiveFilters = computed(() => {
+  return !!store.activeFilters.taxonomy || store.activeFilters.years.length > 0
+})
+
+const handleScroll = (event) => {
+  const { scrollTop, clientHeight, scrollHeight } = event.target
+  if (scrollTop + clientHeight >= scrollHeight - 50) {
+    visibleCount.value += 50
+  }
+}
 
 const getTextColor = (type) => {
   if (type === 'incose_source') return '#00bfff'
@@ -121,6 +191,34 @@ const unifiedDisplayList = computed(() => {
   return list
 })
 
+// Sliced lists for infinite scrolling
+const visibleTargetEnvNodes = computed(() => {
+  return store.filteredEnvNodesBySelection.slice(0, visibleCount.value)
+})
+
+const visibleCitingCoreNodes = computed(() => {
+  return store.citingCoreNodesForSelection.slice(0, visibleCount.value)
+})
+
+const visibleGlobalNodes = computed(() => {
+  return unifiedDisplayList.value.slice(0, visibleCount.value)
+})
+
+// Reset visibleCount whenever filters or focused node change
+watch(
+  [
+    () => store.activeFilters.taxonomy,
+    () => store.activeFilters.years,
+    () => store.displayFilters,
+    () => store.selectedISSNs,
+    () => store.focusedNodeId
+  ],
+  () => {
+    visibleCount.value = 100
+  },
+  { deep: true }
+)
+
 watch(() => store.focusedNodeId, async (newId) => {
   if (!newId) return
   await nextTick() 
@@ -159,7 +257,39 @@ h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(
 .f-toggle { font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .f-toggle input { cursor: pointer; }
 
-.top-list-container { text-align: left; margin-top: 5px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.split-list-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 6px;
+}
+.split-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 2px;
+  margin-bottom: 4px;
+}
+.split-title {
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.split-count {
+  font-size: 10px;
+  color: #888;
+}
+.empty-list-notice {
+  padding: 10px 5px;
+  color: #777;
+  font-style: italic;
+  text-align: center;
+  font-size: 11px;
+}
+
+.top-list-container { text-align: left; margin-top: 2px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .top-list { list-style: none; padding: 0; margin: 0; font-size: 12px; overflow-y: auto; flex: 1; }
 .top-list::-webkit-scrollbar { width: 4px; } .top-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
 .top-list li { padding: 8px 5px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s; border-radius: 4px; }

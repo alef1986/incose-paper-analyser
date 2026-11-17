@@ -49,7 +49,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, onBeforeUnmount, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onBeforeUnmount, onMounted, nextTick } from 'vue'
 import ForceGraph3D from '3d-force-graph'
 import { useGraphStore, issnMap } from '../../store/graphStore.js'
 
@@ -59,7 +59,7 @@ let Graph = null
 
 // РЕАКТИВНЫЕ КООРДИНАТЫ ДЛЯ 3D-ГРАФА
 const pipStyles = reactive({ top: '0px', left: '0px', width: '100%', height: '100%' })
-let pipSyncInterval = null
+let pipResizeObserver = null
 
 const tooltip = ref({ node: null, x: 0, y: 0 })
 const isHoveringTooltip = ref(false)
@@ -93,47 +93,89 @@ const getNodeSize = (node) => {
   return size
 }
 
-const isExcludedByFilter = (node) => {
-  if (!store.focusedNodeId) return false
+// O(1) Filtering: compute excluded node IDs once when filters or graph model change
+const excludedNodeIds = computed(() => {
+  const excluded = new Set()
+  if (!store.graphModel) return excluded
+
   const years = store.activeFilters.years
   const taxonomy = store.activeFilters.taxonomy
-  const isFilterActive = (years && years.length > 0) || taxonomy
-  if (!isFilterActive) return false
+  const hasYears = years && years.length > 0
+  const isFilterActive = hasYears || !!taxonomy
 
-  if (node.id === store.focusedNodeId) return false
+  if (!isFilterActive) return excluded
 
-  // Apply year filter
-  if (years && years.length > 0) {
-    const yRaw = node.year || node.publicationYear
-    const nodeYear = yRaw ? parseInt(yRaw, 10) : null
-    if (nodeYear === null || !years.includes(nodeYear)) {
-      return true
+  const yearsSet = hasYears ? new Set(years) : null
+
+  // Pre-calculate matching taxonomy target IDs
+  let taxonomyTargetIds = null
+  if (taxonomy) {
+    taxonomyTargetIds = new Set()
+    const { level, name, pathString } = taxonomy
+    if (pathString) {
+      const parts = pathString.split(' > ')
+      store.graphModel.nodes.forEach(n => {
+        const matchDomain = !parts[0] || n.domain === parts[0]
+        const matchField = !parts[1] || n.field === parts[1]
+        const matchSubfield = !parts[2] || n.subfield === parts[2]
+        if (matchDomain && matchField && matchSubfield) {
+          taxonomyTargetIds.add(n.id)
+        }
+      })
+    } else if (level && name) {
+      store.graphModel.nodes.forEach(n => {
+        if (n[level] === name) {
+          taxonomyTargetIds.add(n.id)
+        }
+      })
     }
   }
 
-  // Apply taxonomy filter
-  if (taxonomy) {
-    const { level, name } = taxonomy
-    if (node[level] !== name) {
-      if (store.graphModel) {
-        const adj = store.graphModel.adjacencyList.get(node.id) || []
-        const hasTaxonomyCitation = adj.some(l => {
-          const s = typeof l.source === 'object' ? l.source.id : l.source
-          const t = typeof l.target === 'object' ? l.target.id : l.target
-          if (s === node.id) {
-            const targetNode = store.graphModel.nodes.get(t)
-            return targetNode && targetNode[level] === name
-          }
-          return false
-        })
-        if (!hasTaxonomyCitation) {
-          return true
-        }
+  // Pre-calculate nodes that cite taxonomy targets (citing core)
+  let citingNodeIds = null
+  if (taxonomyTargetIds && taxonomyTargetIds.size > 0) {
+    citingNodeIds = new Set()
+    store.graphModel.links.forEach(l => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source
+      const t = typeof l.target === 'object' ? l.target.id : l.target
+      if (taxonomyTargetIds.has(t)) {
+        citingNodeIds.add(s)
+      }
+    })
+  }
+
+  store.graphModel.nodes.forEach(node => {
+    // Focused node is never excluded
+    if (store.focusedNodeId && node.id === store.focusedNodeId) {
+      return
+    }
+
+    // Apply year filter
+    if (hasYears) {
+      const yRaw = node.year || node.publicationYear
+      const nodeYear = yRaw ? parseInt(yRaw, 10) : null
+      if (nodeYear === null || !yearsSet.has(nodeYear)) {
+        excluded.add(node.id)
+        return
       }
     }
-  }
 
-  return false
+    // Apply taxonomy filter
+    if (taxonomy) {
+      const isTaxonomyNode = taxonomyTargetIds ? taxonomyTargetIds.has(node.id) : false
+      const isCitingNode = citingNodeIds ? citingNodeIds.has(node.id) : false
+      if (!isTaxonomyNode && !isCitingNode) {
+        excluded.add(node.id)
+      }
+    }
+  })
+
+  return excluded
+})
+
+const isExcludedByFilter = (node) => {
+  if (!node) return false
+  return excludedNodeIds.value.has(node.id)
 }
 
 const convertToRGBA = (hex, alpha) => {
@@ -277,7 +319,9 @@ const initGraph = () => {
 
 const handleWindowResize = () => {
   if (!Graph || !graphContainer.value) return
-  if (store.mainView !== 'sunburst') {
+  if (store.mainView === 'sunburst') {
+    syncPipPosition()
+  } else {
     // Читаем реальные физические размеры новой панели
     const parent = graphContainer.value.parentElement
     if (parent) {
@@ -300,28 +344,46 @@ const syncPipPosition = () => {
     pipStyles.left = rect.left + 'px'
     pipStyles.width = rect.width + 'px'
     pipStyles.height = rect.height + 'px'
+    if (Graph) {
+      Graph.width(rect.width).height(rect.height)
+      const controls = Graph.controls()
+      if (controls) {
+        if (typeof controls.handleResize === 'function') controls.handleResize()
+        if (typeof controls.update === 'function') controls.update()
+      }
+    }
+  }
+}
+
+const startPipObserver = () => {
+  stopPipObserver()
+  const target = document.getElementById('pip-target')
+  if (target) {
+    syncPipPosition()
+    pipResizeObserver = new ResizeObserver(() => {
+      syncPipPosition()
+    })
+    pipResizeObserver.observe(target)
+  }
+}
+
+const stopPipObserver = () => {
+  if (pipResizeObserver) {
+    pipResizeObserver.disconnect()
+    pipResizeObserver = null
   }
 }
 
 watch(() => store.mainView, async (newVal) => {
   await nextTick()
   if (newVal === 'sunburst') {
-    syncPipPosition() 
-    pipSyncInterval = setInterval(syncPipPosition, 16) 
+    startPipObserver()
     setTimeout(() => {
-      const target = document.getElementById('pip-target')
-      if (target && Graph) {
-        Graph.width(target.clientWidth).height(target.clientHeight)
-        const controls = Graph.controls()
-        if (controls) {
-          if (typeof controls.handleResize === 'function') controls.handleResize()
-          if (typeof controls.update === 'function') controls.update()
-        }
-      }
-    }, 100)
+      if (!pipResizeObserver) startPipObserver()
+    }, 50)
   } else {
     // Возвращаем полноэкранный режим 3D-графа
-    if (pipSyncInterval) clearInterval(pipSyncInterval)
+    stopPipObserver()
     
     // Сбрасываем координаты контейнера до 100%
     pipStyles.top = '0px'
@@ -344,7 +406,7 @@ watch(() => store.mainView, async (newVal) => {
           Graph.zoomToFit(400, 150)
         }
       }
-    }, 100)
+    }, 50)
   }
 })
 
@@ -457,15 +519,14 @@ watch(() => store.isVizActive, (isActive) => {
 onMounted(() => {
   // Если граф стартует в свернутом режиме, сразу подстраиваем координаты
   if (store.mainView === 'sunburst') {
-    syncPipPosition()
-    pipSyncInterval = setInterval(syncPipPosition, 16)
+    nextTick(() => startPipObserver())
   }
   updateGraphData()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleWindowResize)
-  if (pipSyncInterval) clearInterval(pipSyncInterval)
+  stopPipObserver()
   if (Graph) Graph._destructor()
 })
 </script>
