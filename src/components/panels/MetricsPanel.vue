@@ -22,8 +22,6 @@
         </div>
       </div>
     </div>
-    
-    <SearchPanel />
 
     <!-- Top Hubs Collapsible Panel -->
     <div class="analytics-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
@@ -35,9 +33,14 @@
       <div v-show="isTopHubsOpen" class="collapsible-content" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 10px;">
         
         <div class="list-search">
-          <input type="text" v-model="listSearchQuery" placeholder="Filter lists by title or author..." class="edit-input" />
-          <button v-if="listSearchQuery" @click="listSearchQuery = ''" class="clear-btn">✖</button>
+          <div class="list-search-input-wrap">
+            <input type="text" v-model="listSearchQuery" placeholder="Filter lists by title or author..." class="edit-input" />
+            <button v-if="listSearchQuery" @click="listSearchQuery = ''" class="clear-btn" title="Clear filter">✖</button>
+          </div>
+          <button class="adv-search-btn" :class="{ active: isAdvSearchOpen }" @click="isAdvSearchOpen = !isAdvSearchOpen" title="Toggle Advanced Search & Batch Edit">⚙ Batch</button>
         </div>
+
+        <SearchPanel v-show="isAdvSearchOpen" />
 
         <!-- Two distinct scrollable lists when filters are active -->
         <template v-if="hasActiveFilters">
@@ -138,6 +141,7 @@ import DiffusionPanel from './DiffusionPanel.vue'
 const store = useGraphStore()
 const isFilterCategoriesOpen = ref(false)
 const isTopHubsOpen = ref(true)
+const isAdvSearchOpen = ref(false)
 
 // Infinite scroll visible count
 const visibleCount = ref(100)
@@ -331,13 +335,19 @@ h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(
   margin-top: 6px;
 }
 .list-search {
-  position: relative;
   display: flex;
   align-items: center;
+  gap: 6px;
   margin-bottom: 8px;
   flex-shrink: 0;
 }
-.list-search .edit-input {
+.list-search-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.list-search-input-wrap .edit-input {
   width: 100%;
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.08);
@@ -347,9 +357,34 @@ h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(
   border-radius: 4px;
   font-size: 11px;
 }
-.list-search .edit-input:focus {
+.list-search-input-wrap .edit-input:focus {
   outline: none;
   border-color: #00bfff;
+}
+.adv-search-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #aaa;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.adv-search-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+}
+.adv-search-btn.active {
+  background: rgba(255, 170, 0, 0.2);
+  border-color: #ffaa00;
+  color: #ffaa00;
+  font-weight: bold;
 }
 .clear-btn {
   position: absolute;

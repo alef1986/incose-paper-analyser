@@ -1,12 +1,12 @@
 <template>
-  <div class="search-section">
-    <h3 class="section-title collapsible-header" @click="isSearchOpen = !isSearchOpen">
+  <div class="search-section" :class="{ 'compact-mode': hideHeader }">
+    <h3 v-if="!hideHeader" class="section-title collapsible-header" @click="isSearchOpen = !isSearchOpen">
       Search & Batch Edit
       <span class="toggle-icon">{{ isSearchOpen ? '▼' : '▶' }}</span>
     </h3>
     
-    <div v-show="isSearchOpen" class="collapsible-content">
-      <div class="search-bar" style="margin-top: 10px;">
+    <div v-show="hideHeader || isSearchOpen" class="collapsible-content">
+      <div class="search-bar" :style="!hideHeader ? 'margin-top: 10px;' : ''">
         <!-- Search Mode Selector -->
         <select v-model="searchType" class="search-select" @change="executeSearch">
           <option value="author">By Author</option>
@@ -58,6 +58,13 @@
 <script setup>
 import { ref } from 'vue'
 import { useGraphStore } from '../../store/graphStore.js'
+
+defineProps({
+  hideHeader: {
+    type: Boolean,
+    default: true
+  }
+})
 
 const store = useGraphStore()
 const isSearchOpen = ref(false)
@@ -116,6 +123,18 @@ const editSelected = () => { store.openModal(selectedIds.value) }
 
 <style scoped>
 .search-section { margin-top: 25px; border-top: 1px dashed rgba(255, 255, 255, 0.2); padding-top: 15px; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+.search-section.compact-mode {
+  margin-top: 0;
+  margin-bottom: 8px;
+  border: 1px dashed rgba(255, 170, 0, 0.4);
+  padding: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  max-height: 250px;
+}
+.search-section.compact-mode .collapsible-content {
+  margin-top: 0;
+}
 .section-title { font-size: 13px; color: #fff; margin: 0; }
 .collapsible-header { cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; transition: color 0.2s; }
 .collapsible-header:hover { color: #00bfff; }
