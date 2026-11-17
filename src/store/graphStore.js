@@ -46,6 +46,7 @@ export const useGraphStore = defineStore('graph', {
     activeYearsCount: 1,
     lifespanFilterActive: false,
     lifespanCount: 1,
+    lifespanApplyToCanon: false,
 
     vizSettings: {
       enableTooltip: true,
@@ -214,7 +215,7 @@ export const useGraphStore = defineStore('graph', {
             }
             if (citingYears.size < this.activeYearsCount) return
           }
-          if (this.lifespanFilterActive && n.type !== 'assimilated_canon') {
+          if (this.lifespanFilterActive && (n.type !== 'assimilated_canon' || this.lifespanApplyToCanon)) {
             const citingCoreNodes = targetCitingCoreNodes.get(n.id) || []
             let minYear = Infinity
             let maxYear = -Infinity
@@ -459,11 +460,24 @@ export const useGraphStore = defineStore('graph', {
       // ОПТИМИЗАЦИЯ O(1): Собираем целевые узлы таксономии один раз
       let validTargetIds = null;
       if (state.activeFilters.taxonomy) {
-        const { level, name } = state.activeFilters.taxonomy;
         validTargetIds = new Set();
-        state.graphModel.nodes.forEach(n => {
-          if (n[level] === name) validTargetIds.add(n.id);
-        });
+        const pathString = state.activeFilters.taxonomy.pathString;
+        if (pathString) {
+          const parts = pathString.split(' > ');
+          state.graphModel.nodes.forEach(n => {
+            const matchDomain = !parts[0] || n.domain === parts[0];
+            const matchField = !parts[1] || n.field === parts[1];
+            const matchSubfield = !parts[2] || n.subfield === parts[2];
+            if (matchDomain && matchField && matchSubfield) {
+              validTargetIds.add(n.id);
+            }
+          });
+        } else {
+          const { level, name } = state.activeFilters.taxonomy;
+          state.graphModel.nodes.forEach(n => {
+            if (n[level] === name) validTargetIds.add(n.id);
+          });
+        }
       }
 
       // ОПТИМИЗАЦИЯ O(1): Один раз проходим по связям и запоминаем, кто ссылается на таксономию
@@ -522,6 +536,123 @@ export const useGraphStore = defineStore('graph', {
       return Object.keys(diffusionTimeline)
         .map(y => ({ year: parseInt(y), count: diffusionTimeline[y] }))
         .sort((a, b) => a.year - b.year);
+    },
+
+    filteredEnvNodesBySelection(state) {
+      if (!state.graphModel || !state.activeFilters.taxonomy) return [];
+
+      const { level, name, pathString } = state.activeFilters.taxonomy;
+      const validTargetIds = new Set();
+
+      if (pathString) {
+        const parts = pathString.split(' > ');
+        state.graphModel.nodes.forEach(n => {
+          if (n.type !== 'incose_source' && n.type !== 'irrelevant') {
+            const matchDomain = !parts[0] || n.domain === parts[0];
+            const matchField = !parts[1] || n.field === parts[1];
+            const matchSubfield = !parts[2] || n.subfield === parts[2];
+            if (matchDomain && matchField && matchSubfield) {
+              validTargetIds.add(n.id);
+            }
+          }
+        });
+      } else if (level && name) {
+        state.graphModel.nodes.forEach(n => {
+          if (n.type !== 'incose_source' && n.type !== 'irrelevant') {
+            if (n[level] === name) validTargetIds.add(n.id);
+          }
+        });
+      }
+
+      if (validTargetIds.size === 0) return [];
+
+      const counts = new Map();
+      const selectedYears = state.activeFilters.years;
+
+      state.graphModel.links.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+
+        if (validTargetIds.has(tId)) {
+          const sNode = state.graphModel.nodes.get(sId);
+          if (sNode && sNode.type === 'incose_source') {
+            if (!state.activeNodeIds || state.activeNodeIds.size === 0 || state.activeNodeIds.has(sId)) {
+              const yRaw = sNode.year || sNode.publicationYear;
+              const y = yRaw ? parseInt(yRaw, 10) : null;
+              const passYear = selectedYears.length === 0 || (y !== null && selectedYears.includes(y));
+              if (passYear) {
+                counts.set(tId, (counts.get(tId) || 0) + 1);
+              }
+            }
+          }
+        }
+      });
+
+      const result = [];
+      counts.forEach((localInDegree, id) => {
+        if (localInDegree > 0) {
+          if (!state.activeNodeIds || state.activeNodeIds.size === 0 || state.activeNodeIds.has(id)) {
+            result.push({
+              node: state.graphModel.nodes.get(id),
+              localInDegree
+            });
+          }
+        }
+      });
+
+      result.sort((a, b) => b.localInDegree - a.localInDegree);
+      return result;
+    },
+
+    citingCoreNodesForSelection(state) {
+      if (!state.graphModel || !state.activeFilters.taxonomy) return [];
+
+      const envNodes = this.filteredEnvNodesBySelection;
+      if (!envNodes || envNodes.length === 0) return [];
+
+      const validEnvIds = new Set(envNodes.map(item => item.node.id));
+      const sectorOutDegreeMap = new Map();
+      const selectedYears = state.activeFilters.years;
+
+      state.graphModel.links.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+
+        if (validEnvIds.has(tId)) {
+          const sNode = state.graphModel.nodes.get(sId);
+          if (sNode && sNode.type === 'incose_source') {
+            if (!state.activeNodeIds || state.activeNodeIds.size === 0 || state.activeNodeIds.has(sId)) {
+              const yRaw = sNode.year || sNode.publicationYear;
+              const y = yRaw ? parseInt(yRaw, 10) : null;
+              const passYear = selectedYears.length === 0 || (y !== null && selectedYears.includes(y));
+              if (passYear) {
+                sectorOutDegreeMap.set(sId, (sectorOutDegreeMap.get(sId) || 0) + 1);
+              }
+            }
+          }
+        }
+      });
+
+      const result = [];
+      sectorOutDegreeMap.forEach((sectorOutDegree, sId) => {
+        const node = state.graphModel.nodes.get(sId);
+        if (node) {
+          result.push({
+            node,
+            sectorOutDegree,
+            globalInDegree: node.inDegree || 0
+          });
+        }
+      });
+
+      result.sort((a, b) => {
+        if (b.sectorOutDegree !== a.sectorOutDegree) {
+          return b.sectorOutDegree - a.sectorOutDegree;
+        }
+        return b.globalInDegree - a.globalInDegree;
+      });
+
+      return result;
     }
   }
 })

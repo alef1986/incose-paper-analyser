@@ -21,19 +21,19 @@
         <label class="setting-item checkbox-label">
           <input type="checkbox" v-model="store.citationFrequencyFilter" @change="store.recalculateMetrics" />
           Citation Frequency
-          <span class="help-icon" title="Keeps only core nodes that cite 2+ papers, and canon/environment nodes cited by 2+ core papers.">?</span>
+          <span class="help-icon" title="Filters communicative noise. Repeated citations mark the threshold of 'Meaning Condensation' (Kondensation), turning isolated events into recognizable systemic forms.">?</span>
         </label>
         <label class="setting-item checkbox-label">
           <input type="checkbox" v-model="store.uniqueAuthorsFilter" @change="store.recalculateMetrics" />
           Unique Authors
-          <span class="help-icon" title="Keeps only canon and environment nodes cited by more than one core node where no core nodes share any authors.">?</span>
+          <span class="help-icon" title="Decouples psychic systems from the social system. Validates 'Supra-individual Autopoietic Reception' by ensuring concepts are cited by disjoint author groups, not just one repeating team.">?</span>
         </label>
 
         <div class="setting-group" style="padding-top: 5px; margin-top: 5px;">
           <label class="setting-item checkbox-label">
             <input type="checkbox" v-model="store.activeYearsFilterActive" @change="store.recalculateMetrics" />
             Active Years Count
-            <span class="help-icon" title="Keeps only canon and environment nodes that are cited by core nodes from at least X different publication years.">?</span>
+            <span class="help-icon" title="Filters transient academic fashion/hype. Ensures the external concept survived 'Evolutionary Restabilisation' by being actively referenced across multiple distinct years.">?</span>
           </label>
           <div v-show="store.activeYearsFilterActive" class="slider-container" style="padding-left: 20px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 11px; color: #aaa;">
@@ -57,7 +57,7 @@
           <label class="setting-item checkbox-label">
             <input type="checkbox" v-model="store.lifespanFilterActive" @change="store.recalculateMetrics" />
             Lifespan
-            <span class="help-icon" title="Keeps only environment nodes where the difference between the first citing core paper year and the last citing core paper year is at least X years.">?</span>
+            <span class="help-icon" title="Measures structural durability. High lifespan indicates deep assimilation into systemic memory. Apply to Canon to detect systemic amnesia (structural forgetting).">?</span>
           </label>
           <div v-show="store.lifespanFilterActive" class="slider-container" style="padding-left: 20px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 11px; color: #aaa;">
@@ -74,6 +74,7 @@
               </button>
               <input type="range" v-model.number="store.lifespanCount" min="1" :max="store.observationDuration || 1" @input="store.recalculateMetrics" style="flex: 1; cursor: pointer;" />
             </div>
+            <label class="setting-item checkbox-label" style="font-size: 10px; margin-top: 4px;"><input type="checkbox" v-model="store.lifespanApplyToCanon" @change="store.recalculateMetrics" /> Apply to Canon (Test Structural Forgetting)</label>
           </div>
         </div>
       </div>
