@@ -3,30 +3,83 @@
   <div class="analyzer-container">
     <!-- Filter Funnel Bar -->
     <div class="filter-funnel-bar" v-if="store.isLoaded">
-      <div class="funnel-step">
-        <span class="step-label">Base Network:</span>
-        <span class="step-val">{{ store.metrics.originalCoreCount }} Core / {{ (store.metrics.originalEnvCount || 0) + (store.metrics.originalCanonCount || 0) }} Env</span>
+      <div class="funnel-row">
+        <div class="funnel-step">
+          <span class="step-label">Base Network:</span>
+          <span class="step-val">{{ store.metrics.originalCoreCount }} Core / {{ (store.metrics.originalEnvCount || 0) + (store.metrics.originalCanonCount || 0) }} Env</span>
+        </div>
+
+        <span class="funnel-arrow">➔</span>
+
+        <div class="funnel-step" :class="{ 'highlight-structural': store.metrics.isCitationFilterActive }">
+          <span class="step-label">Structural Filters:</span>
+          <span class="step-val">{{ store.metrics.coreCount }} Core / {{ (store.metrics.envCount || 0) + (store.metrics.canonCount || 0) }} Env</span>
+        </div>
+
+        <span class="funnel-arrow">➔</span>
+
+        <div class="funnel-step" :class="{ 'highlight-slice': hasActiveSlice }">
+          <span class="step-label">Active Slice:</span>
+          <span class="step-val">{{ store.filteredCoreNodes.length }} Core</span>
+          <template v-if="hasActiveSlice">
+            <span v-if="sliceTaxonomyText" class="slice-tag" :title="sliceTaxonomyText">{{ sliceTaxonomyText }}</span>
+            <span v-if="sliceYearsText" class="slice-tag">{{ sliceYearsText }}</span>
+            <button class="reset-slice-btn" @click="resetSlice" title="Clear slice filters and selection">
+              [✖ Reset Slice]
+            </button>
+          </template>
+        </div>
       </div>
 
-      <span class="funnel-arrow">➔</span>
+      <div class="funnel-divider"></div>
 
-      <div class="funnel-step" :class="{ 'highlight-structural': store.metrics.isCitationFilterActive }">
-        <span class="step-label">Structural Filters:</span>
-        <span class="step-val">{{ store.metrics.coreCount }} Core / {{ (store.metrics.envCount || 0) + (store.metrics.canonCount || 0) }} Env</span>
+      <!-- Quick Use-Case Presets Row -->
+      <div class="preset-row">
+        <span class="preset-label">Guided Discovery:</span>
+        <button 
+          class="preset-btn" 
+          :class="{ active: store.activePreset === 'bridges' }"
+          @click="store.applyUseCasePreset('bridges')"
+          title="Shows only external domains and papers backed by verified INCOSE Translators, switching 3D view to Translation Flow."
+        >
+          🌉 Domain Translators
+        </button>
+        <button 
+          class="preset-btn" 
+          :class="{ active: store.activePreset === 'classics' }"
+          @click="store.applyUseCasePreset('classics')"
+          title="Finds foundational external sources cited across 8+ years by independent author teams."
+        >
+          🏛 Time-Tested Classics
+        </button>
+        <button 
+          class="preset-btn" 
+          :class="{ active: store.activePreset === 'frontier' }"
+          @click="store.applyUseCasePreset('frontier')"
+          title="Focuses on knowledge imported during the most recent 5 years."
+        >
+          🔥 Recent 5Y Frontier
+        </button>
+        <button 
+          class="preset-btn blindspots-btn" 
+          :class="{ active: store.activePreset === 'blindspots' }"
+          @click="store.applyUseCasePreset('blindspots')"
+          title="Opens macroscopic table comparing Rejection Rate and Epistemic Lag across all external sciences."
+        >
+          👁 Blind Spots Matrix
+        </button>
+        <button 
+          class="preset-btn reset-btn" 
+          @click="store.applyUseCasePreset('reset')"
+          title="Reset all advanced filters, slices, and presets"
+        >
+          ↺ Reset All
+        </button>
       </div>
 
-      <span class="funnel-arrow">➔</span>
-
-      <div class="funnel-step" :class="{ 'highlight-slice': hasActiveSlice }">
-        <span class="step-label">Active Slice:</span>
-        <span class="step-val">{{ store.filteredCoreNodes.length }} Core</span>
-        <template v-if="hasActiveSlice">
-          <span v-if="sliceTaxonomyText" class="slice-tag" :title="sliceTaxonomyText">{{ sliceTaxonomyText }}</span>
-          <span v-if="sliceYearsText" class="slice-tag">{{ sliceYearsText }}</span>
-          <button class="reset-slice-btn" @click="resetSlice" title="Clear slice filters and selection">
-            [✖ Reset Slice]
-          </button>
-        </template>
+      <!-- Preset Contextual Guidance Banner -->
+      <div v-if="presetHintText" class="preset-hint-banner">
+        <span class="preset-hint-text" :title="presetHintText">{{ presetHintText }}</span>
       </div>
     </div>
 
@@ -34,6 +87,7 @@
     <EgoPanel />
     <MetricsPanel />
     <NodeInfoModal /> <!-- Внедряем меню поверх графа -->
+    <BlindSpotsModal />
     
     <div id="empty-state" v-if="!store.focusedNodeId && !store.isLoaded">
       Upload JSON and select a node from the right panel to build its cluster (Radius = 1).
@@ -48,6 +102,7 @@ import ForceGraph3D from '../components/visualization/ForceGraph3D.vue'
 import EgoPanel from '../components/panels/EgoPanel.vue'
 import MetricsPanel from '../components/panels/MetricsPanel.vue'
 import NodeInfoModal from '../components/modals/NodeInfoModal.vue'
+import BlindSpotsModal from '../components/modals/BlindSpotsModal.vue'
 
 const store = useGraphStore()
 
@@ -67,6 +122,19 @@ const sliceYearsText = computed(() => {
   const min = Math.min(...yrs)
   const max = Math.max(...yrs)
   return `${min}–${max}`
+})
+
+const presetHintText = computed(() => {
+  switch (store.activePreset) {
+    case 'bridges':
+      return '🌉 Domain Translators active: Showing only realized imports backed by True Translators. Click any Sunburst sector to find top guide papers.'
+    case 'classics':
+      return '🏛 Time-Tested Classics active: Network pruned to sources cited across 8+ yrs by independent teams. Click any Sunburst sector to inspect classics by discipline.'
+    case 'frontier':
+      return '🔥 Recent 5Y Frontier active: Focused on the 5 most recent publication years. Browse Context Subgraph Hubs or click Sunburst to inspect emerging topics.'
+    default:
+      return null
+  }
 })
 
 const resetSlice = () => {
@@ -98,30 +166,128 @@ const resetSlice = () => {
 /* Filter Funnel Bar */
 .filter-funnel-bar {
   position: fixed;
-  top: 12px;
+  top: 10px;
   left: 370px;
   right: 360px;
   z-index: 20;
   pointer-events: auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  background: rgba(18, 20, 28, 0.82);
+  gap: 5px;
+  background: rgba(18, 20, 28, 0.9);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
-  padding: 6px 12px;
+  padding: 5px 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   font-size: 11px;
   color: #bbb;
   user-select: none;
+  max-height: 108px;
+}
+
+.funnel-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
   overflow-x: auto;
   white-space: nowrap;
 }
 
-.filter-funnel-bar::-webkit-scrollbar {
+.funnel-row::-webkit-scrollbar {
   display: none;
+}
+
+.funnel-divider {
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.preset-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.preset-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #ddd;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.preset-btn:hover {
+  background: rgba(0, 191, 255, 0.15);
+  border-color: rgba(0, 191, 255, 0.4);
+  color: #fff;
+}
+
+.preset-btn.active {
+  background: rgba(0, 191, 255, 0.25);
+  border-color: #00bfff;
+  color: #00bfff;
+  box-shadow: 0 0 8px rgba(0, 191, 255, 0.3);
+  font-weight: 600;
+}
+
+.preset-btn.blindspots-btn:hover,
+.preset-btn.blindspots-btn.active {
+  background: rgba(255, 170, 0, 0.2);
+  border-color: #ffaa00;
+  color: #ffaa00;
+  box-shadow: 0 0 8px rgba(255, 170, 0, 0.3);
+}
+
+.preset-btn.reset-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+}
+
+.preset-hint-banner {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  background: rgba(0, 191, 255, 0.08);
+  border: 1px dashed rgba(0, 191, 255, 0.35);
+  border-radius: 4px;
+}
+
+.preset-hint-text {
+  font-size: 10px;
+  color: #7dd3fc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 
 .funnel-step {

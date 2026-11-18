@@ -229,7 +229,7 @@ const updateChart = async () => {
         }
       },
       series: {
-        type: 'sunburst', data: data, radius: [0, '95%'],
+        type: 'sunburst', data: data, radius: store.mainView === 'sunburst' ? [0, '90%'] : [0, '95%'],
         nodeClick: 'rootToNode',
         itemStyle: { borderRadius: 3, borderWidth: 2 }, 
         label: { show: false }, 
@@ -290,7 +290,10 @@ watch(() => store.translatorLensActive, () => {
 
 watch(() => store.mainView, async () => {
   await nextTick();
-  if (chartInstance) chartInstance.resize();
+  setTimeout(() => {
+    updateChart();
+    if (chartInstance) chartInstance.resize();
+  }, 50);
 })
 
 onMounted(() => {
@@ -315,13 +318,13 @@ onBeforeUnmount(() => { if (chartInstance) chartInstance.dispose() })
 
 .is-fullscreen-canvas {
   position: fixed !important;
-  top: 0 !important;
+  top: 120px !important;
   left: 350px !important;
   width: calc(100vw - 700px) !important; 
-  height: 100vh !important;
+  height: calc(100vh - 120px) !important;
   overflow: hidden !important; 
   z-index: 5 !important; 
-  background: #050508;
+  background: #050510;
 }
 
 .viewport-legend {

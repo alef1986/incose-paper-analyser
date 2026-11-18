@@ -28,6 +28,8 @@ export const useGraphStore = defineStore('graph', {
       taxonomy: null 
     },
     translatorLensActive: false,
+    isBlindSpotsOpen: false,
+    activePreset: null, // 'bridges' | 'classics' | 'frontier' | 'blindspots' | null
 
     graphModel: null,
     isLoaded: false,
@@ -98,6 +100,54 @@ export const useGraphStore = defineStore('graph', {
     },
     toggleMainView() {
       this.mainView = this.mainView === 'graph' ? 'sunburst' : 'graph';
+    },
+    applyUseCasePreset(presetName) {
+      if (presetName === 'blindspots') {
+        this.isBlindSpotsOpen = true;
+        this.activePreset = 'blindspots';
+        return;
+      }
+
+      // 'reset': Reset all advanced filters & active slice
+      this.citationFrequencyFilter = false;
+      this.uniqueAuthorsFilter = false;
+      this.activeYearsFilterActive = false;
+      this.lifespanFilterActive = false;
+      this.translatorLensActive = false;
+      this.activeFilters.years = [];
+      this.activeFilters.taxonomy = null;
+      this.focusedNodeId = null;
+      this.focusedClique = null;
+      this.vizSettings.layoutMode = 'force';
+      this.activePreset = null;
+
+      if (presetName === 'reset') {
+        this.recalculateMetrics();
+        return;
+      }
+
+      if (presetName === 'bridges') {
+        this.translatorLensActive = true;
+        this.vizSettings.layoutMode = 'translationFlow';
+        this.activePreset = 'bridges';
+      } else if (presetName === 'classics') {
+        this.citationFrequencyFilter = true;
+        this.uniqueAuthorsFilter = true;
+        this.lifespanFilterActive = true;
+        const dur = this.observationDuration || 8;
+        this.lifespanCount = Math.min(8, dur);
+        this.activePreset = 'classics';
+      } else if (presetName === 'frontier') {
+        const sortedYears = [...(this.availableYears || [])]
+          .map(y => parseInt(y, 10))
+          .filter(y => !isNaN(y))
+          .sort((a, b) => b - a);
+        const recent5 = sortedYears.slice(0, 5);
+        this.setYearFilter(recent5);
+        this.activePreset = 'frontier';
+      }
+
+      this.recalculateMetrics();
     },
     loadGraphData(rawJsonData) {
       try {
@@ -1087,6 +1137,139 @@ export const useGraphStore = defineStore('graph', {
           }
           return b.size - a.size;
         });
+    },
+
+    disciplinaryBlindSpots(state) {
+      if (!state.graphModel || !state.graphModel.links) return [];
+
+      const roles = this.nodeRoles;
+      const coreCitationsPerNode = new Map();
+      const domainMap = new Map();
+
+      const createBucket = () => ({
+        totalCitations: 0,
+        nodeIds: new Set(),
+        translatorBackedCitations: 0,
+        sumLag: 0,
+        lagCount: 0
+      });
+
+      state.graphModel.links.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+        const sNode = state.graphModel.nodes.get(sId);
+        const tNode = state.graphModel.nodes.get(tId);
+
+        if (!sNode || !tNode) return;
+        if (sNode.type !== 'incose_source') return;
+        if (tNode.type === 'incose_source' || tNode.type === 'irrelevant') return;
+
+        const domain = tNode.domain ? tNode.domain.trim() : null;
+        if (!domain || domain === 'Unknown') return;
+
+        const field = (tNode.field && tNode.field.trim() && tNode.field.trim() !== 'Unknown') ? tNode.field.trim() : 'Other';
+        const subfield = (tNode.subfield && tNode.subfield.trim() && tNode.subfield.trim() !== 'Unknown') ? tNode.subfield.trim() : 'Other';
+
+        // Record core citation count for external node
+        coreCitationsPerNode.set(tId, (coreCitationsPerNode.get(tId) || 0) + 1);
+
+        const isTranslator = roles?.get(sId)?.role === 'True Translator';
+
+        const sYearRaw = sNode.year || sNode.publicationYear;
+        const tYearRaw = tNode.year || tNode.publicationYear;
+        const sYear = sYearRaw ? parseInt(sYearRaw, 10) : null;
+        const tYear = tYearRaw ? parseInt(tYearRaw, 10) : null;
+        const hasLag = sYear && tYear && !isNaN(sYear) && !isNaN(tYear) && sYear >= 1900 && tYear >= 1800;
+        const lag = hasLag ? (sYear - tYear) : null;
+
+        if (!domainMap.has(domain)) {
+          domainMap.set(domain, {
+            bucket: createBucket(),
+            fields: new Map()
+          });
+        }
+        const domEntry = domainMap.get(domain);
+
+        if (!domEntry.fields.has(field)) {
+          domEntry.fields.set(field, {
+            bucket: createBucket(),
+            subfields: new Map()
+          });
+        }
+        const fldEntry = domEntry.fields.get(field);
+
+        if (!fldEntry.subfields.has(subfield)) {
+          fldEntry.subfields.set(subfield, createBucket());
+        }
+        const subBucket = fldEntry.subfields.get(subfield);
+
+        const applyLink = (b) => {
+          b.totalCitations++;
+          b.nodeIds.add(tId);
+          if (isTranslator) b.translatorBackedCitations++;
+          if (hasLag) {
+            b.sumLag += lag;
+            b.lagCount++;
+          }
+        };
+
+        applyLink(domEntry.bucket);
+        applyLink(fldEntry.bucket);
+        applyLink(subBucket);
+      });
+
+      const computeMetrics = (bucket, level, name, pathString) => {
+        const uniqueWorks = bucket.nodeIds.size;
+        let oneOffWorks = 0;
+        for (const nId of bucket.nodeIds) {
+          if ((coreCitationsPerNode.get(nId) || 0) === 1) {
+            oneOffWorks++;
+          }
+        }
+        const rejectionRate = uniqueWorks > 0 ? (oneOffWorks / uniqueWorks) * 100 : 0;
+        const realizedShare = bucket.totalCitations > 0 ? (bucket.translatorBackedCitations / bucket.totalCitations) * 100 : 0;
+        const avgLag = bucket.lagCount > 0 ? (bucket.sumLag / bucket.lagCount) : null;
+
+        return {
+          level,
+          name,
+          pathString,
+          totalCitations: bucket.totalCitations,
+          uniqueWorks,
+          oneOffWorks,
+          rejectionRate,
+          translatorBackedCitations: bucket.translatorBackedCitations,
+          realizedShare,
+          avgLag
+        };
+      };
+
+      const result = [];
+      for (const [domName, domEntry] of domainMap.entries()) {
+        const domObj = computeMetrics(domEntry.bucket, 'domain', domName, domName);
+        domObj.fields = [];
+
+        for (const [fldName, fldEntry] of domEntry.fields.entries()) {
+          const fldPath = `${domName} > ${fldName}`;
+          const fldObj = computeMetrics(fldEntry.bucket, 'field', fldName, fldPath);
+          fldObj.subfields = [];
+
+          for (const [subName, subBucket] of fldEntry.subfields.entries()) {
+            const subPath = `${domName} > ${fldName} > ${subName}`;
+            const subObj = computeMetrics(subBucket, 'subfield', subName, subPath);
+            fldObj.subfields.push(subObj);
+          }
+
+          fldObj.subfields.sort((a, b) => b.totalCitations - a.totalCitations);
+          domObj.fields.push(fldObj);
+        }
+
+        domObj.fields.sort((a, b) => b.totalCitations - a.totalCitations);
+        result.push(domObj);
+      }
+
+      result.sort((a, b) => b.totalCitations - a.totalCitations);
+      return result;
     }
   }
 })

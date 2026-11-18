@@ -370,6 +370,10 @@ const applyYearFilter = () => {
   store.setYearFilter(selectedYears.value)
 }
 
+watch(() => store.activeFilters.years, (newYears) => {
+  selectedYears.value = Array.isArray(newYears) ? [...newYears] : []
+}, { immediate: true, deep: true })
+
 watch(() => store.isLoaded, (loaded) => {
   if (loaded) {
     selectedYears.value = []
