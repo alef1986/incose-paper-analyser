@@ -157,43 +157,107 @@ export class Graph {
         };
     }
 
-    getCliqueNetwork(cliqueMembersSet) {
-        const subNodesMap = new Map();
-        const subLinksSet = new Set();
-        
-        // Add all clique members
-        cliqueMembersSet.forEach(id => {
-            const node = this.nodes.get(id);
-            if (node) subNodesMap.set(id, node);
-        });
+    getCliqueNetwork(cliqueMembersSet, collapseToSuperNode = false, cliqueMeta = null) {
+        if (!collapseToSuperNode) {
+            const subNodesMap = new Map();
+            const subLinksSet = new Set();
+            
+            // Add all clique members
+            cliqueMembersSet.forEach(id => {
+                const node = this.nodes.get(id);
+                if (node) subNodesMap.set(id, node);
+            });
 
-        // Add 1-hop environment targets
+            // Add 1-hop environment targets
+            this.links.forEach(l => {
+                const s = typeof l.source === 'object' ? l.source.id : l.source;
+                const t = typeof l.target === 'object' ? l.target.id : l.target;
+                if (cliqueMembersSet.has(s)) {
+                    const tNode = this.nodes.get(t);
+                    if (tNode && tNode.type !== 'irrelevant') {
+                        subNodesMap.set(t, tNode);
+                    }
+                }
+            });
+
+            // Keep all links between collected nodes
+            subNodesMap.forEach((_, nId) => {
+                const adj = this.adjacencyList.get(nId) || [];
+                adj.forEach(l => {
+                    const s = typeof l.source === 'object' ? l.source.id : l.source;
+                    const t = typeof l.target === 'object' ? l.target.id : l.target;
+                    if (subNodesMap.has(s) && subNodesMap.has(t)) {
+                        subLinksSet.add(l);
+                    }
+                });
+            });
+
+            return {
+                nodes: Array.from(subNodesMap.values()).map(n => ({ ...n, pubType: n.pubType })),
+                links: Array.from(subLinksSet).map(l => ({ ...l }))
+            };
+        }
+
+        // Collapse to virtual super-node
+        const superNodeId = `clique-super-${cliqueMeta?.id || 'node'}`;
+        const superNode = {
+            id: superNodeId,
+            title: `Clique (${cliqueMembersSet.size} Core Papers) — Top:${cliqueMeta?.topAuthors || 'Various'}`,
+            type: 'clique_supernode',
+            inDegree: cliqueMembersSet.size * 5,
+            authors: cliqueMeta?.topAuthors || 'Clique Collective',
+            issns: [],
+            domain: 'INCOSE Clique',
+            isSuperNode: true,
+            memberCount: cliqueMembersSet.size
+        };
+
+        const externalNodesMap = new Map();
+        const outgoingCounts = new Map(); // extId -> count
+        const incomingCounts = new Map(); // otherCoreId -> count
+
         this.links.forEach(l => {
             const s = typeof l.source === 'object' ? l.source.id : l.source;
             const t = typeof l.target === 'object' ? l.target.id : l.target;
-            if (cliqueMembersSet.has(s)) {
+
+            const sInClique = cliqueMembersSet.has(s);
+            const tInClique = cliqueMembersSet.has(t);
+
+            if (sInClique && !tInClique) {
                 const tNode = this.nodes.get(t);
                 if (tNode && tNode.type !== 'irrelevant') {
-                    subNodesMap.set(t, tNode);
+                    externalNodesMap.set(t, tNode);
+                    outgoingCounts.set(t, (outgoingCounts.get(t) || 0) + 1);
+                }
+            } else if (!sInClique && tInClique) {
+                const sNode = this.nodes.get(s);
+                if (sNode && sNode.type !== 'irrelevant') {
+                    externalNodesMap.set(s, sNode);
+                    incomingCounts.set(s, (incomingCounts.get(s) || 0) + 1);
                 }
             }
         });
 
-        // Keep all links between collected nodes
-        subNodesMap.forEach((_, nId) => {
-            const adj = this.adjacencyList.get(nId) || [];
-            adj.forEach(l => {
-                const s = typeof l.source === 'object' ? l.source.id : l.source;
-                const t = typeof l.target === 'object' ? l.target.id : l.target;
-                if (subNodesMap.has(s) && subNodesMap.has(t)) {
-                    subLinksSet.add(l);
-                }
+        const aggregatedLinks = [];
+        outgoingCounts.forEach((count, extId) => {
+            aggregatedLinks.push({
+                source: superNodeId,
+                target: extId,
+                weight: count
+            });
+        });
+
+        incomingCounts.forEach((count, otherId) => {
+            aggregatedLinks.push({
+                source: otherId,
+                target: superNodeId,
+                weight: count
             });
         });
 
         return {
-            nodes: Array.from(subNodesMap.values()).map(n => ({ ...n, pubType: n.pubType })),
-            links: Array.from(subLinksSet).map(l => ({ ...l }))
+            nodes: [superNode, ...Array.from(externalNodesMap.values()).map(n => ({ ...n, pubType: n.pubType }))],
+            links: aggregatedLinks
         };
     }
 

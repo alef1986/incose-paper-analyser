@@ -18,7 +18,10 @@
     <div class="viewport-legend" v-if="store.mainView === 'graph' && store.graphModel">
       <h4 class="legend-title">{{ store.focusedClique ? 'Clique Taxonomy' : 'Graph Taxonomy' }}</h4>
       <template v-if="store.focusedClique">
-        <div class="legend-item"><span class="color-dot clique-member"></span> Clique Member</div>
+        <div class="legend-item">
+          <span class="color-dot clique-member"></span> 
+          {{ store.vizSettings.collapseCliqueSuperNode ? 'Clique Super-Node' : 'Clique Member' }}
+        </div>
         <div class="legend-item"><span class="color-dot incose"></span> Other Core</div>
         <div class="legend-item"><span class="color-dot target"></span> Environment</div>
       </template>
@@ -29,13 +32,16 @@
         <div class="legend-item"><span class="color-dot irrel"></span> Not Relevant</div>
         <div class="legend-item" v-if="store.focusedNodeId"><span class="color-dot ego"></span> Focal Node (Ego)</div>
       </template>
+      <div v-if="store.focusedNodeId && store.vizSettings.layoutMode === 'translationFlow'" class="legend-flow-note">
+        Left: Cited Sources (Input) ➔ Center: Translator ➔ Right: Citing INCOSE Papers (Diffusion)
+      </div>
     </div>
 
     <div v-if="tooltip.node && store.vizSettings.enableTooltip" class="custom-tooltip" :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }" @mouseenter="isHoveringTooltip = true" @mouseleave="hideTooltip">
       <div class="tt-title">{{ tooltip.node.title }}</div>
       <div class="tt-meta"><b>Author:</b> {{ formatAuthors(tooltip.node.authors) }}</div>
       <div class="tt-meta"><b>Source:</b> {{ getSourceName(tooltip.node.issns) }}</div>
-      <a class="tt-link" @click.prevent="openCard(tooltip.node.id)">Open Card &rarr;</a>
+      <a v-if="tooltip.node.type !== 'clique_supernode'" class="tt-link" @click.prevent="openCard(tooltip.node.id)">Open Card &rarr;</a>
     </div>
 
     <!-- WARNING OVERLAY FOR TOO MANY NODES -->
@@ -97,10 +103,101 @@ const openCard = (id) => { store.openModal(id); hideTooltip() }
 const hideTooltip = () => { isHoveringTooltip.value = false; tooltip.value.node = null }
 
 const getNodeSize = (node) => {
+  if (node.type === 'clique_supernode') {
+    return Math.max(8, Math.sqrt(node.memberCount || 10) * 3.5)
+  }
   let size = Math.max(1, Math.sqrt(node.inDegree || 0) * 0.8)
   if ((node.type === 'incose_source' || node.type === 'assimilated_canon') && size < 2) size = 2
   if (node.type === 'irrelevant') size = 0.5
   return size
+}
+
+const layoutLeftTier = (nodes, fixedX) => {
+  if (!nodes || nodes.length === 0) return
+  nodes.sort((a, b) => {
+    const tA = a.domain || a.type || ''
+    const tB = b.domain || b.type || ''
+    const cmp = tA.localeCompare(tB)
+    if (cmp !== 0) return cmp
+    return (a.title || '').localeCompare(b.title || '')
+  })
+
+  const count = nodes.length
+  if (count === 1) {
+    nodes[0].fx = fixedX
+    nodes[0].fy = 0
+    nodes[0].fz = 0
+    return
+  }
+
+  const ringStep = 32
+  let ringIndex = 1
+  let assigned = 0
+  while (assigned < count) {
+    const ringRadius = ringIndex * ringStep
+    const ringCapacity = Math.max(6, Math.round((2 * Math.PI * ringRadius) / 26))
+    const currentRingCount = Math.min(ringCapacity, count - assigned)
+    const angleOffset = (ringIndex * Math.PI) / 6
+
+    for (let i = 0; i < currentRingCount; i++) {
+      const node = nodes[assigned + i]
+      const angle = (i / currentRingCount) * 2 * Math.PI + angleOffset
+      node.fx = fixedX
+      node.fy = Math.round(ringRadius * Math.sin(angle) * 10) / 10
+      node.fz = Math.round(ringRadius * Math.cos(angle) * 10) / 10
+    }
+    assigned += currentRingCount
+    ringIndex++
+  }
+}
+
+const layoutRightTier = (nodes, fixedX) => {
+  if (!nodes || nodes.length === 0) return
+  nodes.sort((a, b) => {
+    const yA = parseInt(a.publicationYear || a.year || 0, 10)
+    const yB = parseInt(b.publicationYear || b.year || 0, 10)
+    if (yA !== yB) return yA - yB
+    return (a.title || '').localeCompare(b.title || '')
+  })
+
+  const count = nodes.length
+  if (count === 1) {
+    nodes[0].fx = fixedX
+    nodes[0].fy = 0
+    nodes[0].fz = 0
+    return
+  }
+
+  if (count <= 20) {
+    const totalHeight = Math.min(360, Math.max(120, (count - 1) * 24))
+    const stepY = totalHeight / (count - 1)
+    const startY = -totalHeight / 2
+    nodes.forEach((node, i) => {
+      node.fx = fixedX
+      node.fy = Math.round((startY + i * stepY) * 10) / 10
+      node.fz = Math.round(((i % 3 - 1) * 24) * 10) / 10
+    })
+  } else {
+    const ringStep = 32
+    let ringIndex = 1
+    let assigned = 0
+    while (assigned < count) {
+      const ringRadius = ringIndex * ringStep
+      const ringCapacity = Math.max(6, Math.round((2 * Math.PI * ringRadius) / 26))
+      const currentRingCount = Math.min(ringCapacity, count - assigned)
+      const angleOffset = (ringIndex * Math.PI) / 6
+
+      for (let i = 0; i < currentRingCount; i++) {
+        const node = nodes[assigned + i]
+        const angle = (i / currentRingCount) * 2 * Math.PI + angleOffset
+        node.fx = fixedX
+        node.fy = Math.round(ringRadius * Math.sin(angle) * 10) / 10
+        node.fz = Math.round(ringRadius * Math.cos(angle) * 10) / 10
+      }
+      assigned += currentRingCount
+      ringIndex++
+    }
+  }
 }
 
 // O(1) Filtering: compute excluded node IDs once when filters or graph model change
@@ -190,14 +287,34 @@ watch(() => excludedNodeIds.value, (newSet) => {
   if (Graph) {
     Graph.nodeColor(Graph.nodeColor())
     Graph.nodeVal(Graph.nodeVal())
-    Graph.linkOpacity(Graph.linkOpacity())
+    Graph.linkColor(Graph.linkColor())
     Graph.linkWidth(Graph.linkWidth())
+    Graph.linkDirectionalParticles(link => getLinkParticles(link))
+    Graph.linkDirectionalParticleWidth(link => isLinkExcluded(link) ? 0.45 : 1.3)
+    Graph.linkDirectionalParticleColor(link => isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00')
   }
 }, { immediate: true })
 
 const isExcludedByFilter = (node) => {
   if (!node) return false
   return rawExcludedSet.has(node.id)
+}
+
+const isLinkExcluded = (link) => {
+  if (!link) return false
+  if (!store.focusedNodeId) return false
+  const years = store.activeFilters.years
+  const taxonomy = store.activeFilters.taxonomy
+  const isFilterActive = (years && years.length > 0) || taxonomy
+  if (!isFilterActive) return false
+
+  const s = typeof link.source === 'object' ? link.source.id : link.source
+  const t = typeof link.target === 'object' ? link.target.id : link.target
+  const sourceNode = store.graphModel ? store.graphModel.nodes.get(s) : null
+  const targetNode = store.graphModel ? store.graphModel.nodes.get(t) : null
+  const isSourceExcluded = sourceNode ? isExcludedByFilter(sourceNode) : false
+  const isTargetExcluded = targetNode ? isExcludedByFilter(targetNode) : false
+  return isSourceExcluded || isTargetExcluded
 }
 
 const convertToRGBA = (hex, alpha) => {
@@ -212,6 +329,10 @@ const convertToRGBA = (hex, alpha) => {
 }
 
 const getNodeColor = (node) => {
+  if (node.type === 'clique_supernode') {
+    return convertToRGBA('#9b59b6', 0.95)
+  }
+
   if (store.focusedClique && store.focusedClique.members && store.focusedClique.members.includes(node.id)) {
     return convertToRGBA('#9b59b6', 1.0)
   }
@@ -235,6 +356,15 @@ const getNodeColor = (node) => {
     }
   }
   return convertToRGBA(baseColor, 0.9)
+}
+
+const getLinkParticles = (link) => {
+  if (!store.vizSettings.enableParticles) return 0
+  if (store.focusedClique) return Math.min(4, link.weight || 2)
+  if (store.focusedNodeId && store.vizSettings.layoutMode === 'translationFlow') {
+    return isLinkExcluded(link) ? 1 : 3
+  }
+  return 0
 }
 
 const initGraph = () => {
@@ -265,52 +395,43 @@ const initGraph = () => {
       return size
     })
     .nodeOpacity(1.0)
-    .linkColor(() => '#9999aa')    
-    .linkOpacity(link => {
+    .linkColor(link => {
       if (store.focusedNodeId) {
         const years = store.activeFilters.years
         const taxonomy = store.activeFilters.taxonomy
         const isFilterActive = (years && years.length > 0) || taxonomy
         if (isFilterActive) {
-          const s = typeof link.source === 'object' ? link.source.id : link.source
-          const t = typeof link.target === 'object' ? link.target.id : link.target
-          const sourceNode = store.graphModel ? store.graphModel.nodes.get(s) : null
-          const targetNode = store.graphModel ? store.graphModel.nodes.get(t) : null
-          const isSourceExcluded = sourceNode ? isExcludedByFilter(sourceNode) : false
-          const isTargetExcluded = targetNode ? isExcludedByFilter(targetNode) : false
-          if (isSourceExcluded || isTargetExcluded) {
-            return 0.03
-          } else {
-            return 0.8
-          }
+          return isLinkExcluded(link)
+            ? convertToRGBA('#9999aa', 0.05)
+            : convertToRGBA('#9999aa', 0.85)
         }
       }
-      return 0.4
-    })            
+      return convertToRGBA('#9999aa', 0.45)
+    })
+    .linkOpacity(0.6)
     .linkWidth(link => {
       if (store.focusedNodeId) {
         const years = store.activeFilters.years
         const taxonomy = store.activeFilters.taxonomy
         const isFilterActive = (years && years.length > 0) || taxonomy
         if (isFilterActive) {
-          const s = typeof link.source === 'object' ? link.source.id : link.source
-          const t = typeof link.target === 'object' ? link.target.id : link.target
-          const sourceNode = store.graphModel ? store.graphModel.nodes.get(s) : null
-          const targetNode = store.graphModel ? store.graphModel.nodes.get(t) : null
-          const isSourceExcluded = sourceNode ? isExcludedByFilter(sourceNode) : false
-          const isTargetExcluded = targetNode ? isExcludedByFilter(targetNode) : false
-          if (isSourceExcluded || isTargetExcluded) {
-            return 0.02
-          } else {
-            return 0.2
-          }
+          return isLinkExcluded(link) ? 0.02 : 0.2
         }
       }
       return 0.2
-    })                
+    })
     .linkDirectionalArrowLength(1.5)
     .linkDirectionalArrowRelPos(1)
-    .onNodeClick(node => { store.setFocusedNode(node.id); hideTooltip() })
+    .linkDirectionalParticles(link => getLinkParticles(link))
+    .linkDirectionalParticleWidth(link => isLinkExcluded(link) ? 0.45 : 1.3)
+    .linkDirectionalParticleSpeed(link => isLinkExcluded(link) ? 0.004 : 0.007)
+    .linkDirectionalParticleColor(link => isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00')
+    .linkDirectionalParticleResolution(8)
+    .onNodeClick(node => {
+      if (node.type === 'clique_supernode') return
+      store.setFocusedNode(node.id)
+      hideTooltip()
+    })
     .onNodeHover(node => {
       if (!store.vizSettings.enableTooltip) return
       if (node) {
@@ -454,36 +575,142 @@ const proceedWithGraphData = (data) => {
   // Disable arrows on massive graphs to cut geometries by 50%
   Graph.linkDirectionalArrowLength(isMassive ? 0 : 1.5);
 
+  if (store.focusedNodeId && store.vizSettings.layoutMode === 'translationFlow') {
+    const focalId = store.focusedNodeId
+    const focalNode = data.nodes.find(n => n.id === focalId)
+    if (focalNode) {
+      focalNode.fx = 0
+      focalNode.fy = 0
+      focalNode.fz = 0
+    }
+
+    const directLeft = new Set()
+    const directRight = new Set()
+
+    data.links.forEach(l => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source
+      const t = typeof l.target === 'object' ? l.target.id : l.target
+      if (s === focalId && t !== focalId) directLeft.add(t)
+      if (t === focalId && s !== focalId) directRight.add(s)
+    })
+
+    // Resolve overlaps
+    directLeft.forEach(id => {
+      if (directRight.has(id)) {
+        const node = data.nodes.find(n => n.id === id)
+        if (node && node.type === 'incose_source') {
+          directLeft.delete(id)
+        } else {
+          directRight.delete(id)
+        }
+      }
+    })
+
+    const directLeftNodes = []
+    const directRightNodes = []
+    const remainingNodes = []
+
+    data.nodes.forEach(n => {
+      if (n.id === focalId) return
+      if (directLeft.has(n.id)) {
+        directLeftNodes.push(n)
+      } else if (directRight.has(n.id)) {
+        directRightNodes.push(n)
+      } else {
+        remainingNodes.push(n)
+      }
+    })
+
+    const left2Nodes = []
+    const right2Nodes = []
+
+    remainingNodes.forEach(n => {
+      const isLinkedToLeft = data.links.some(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source
+        const t = typeof l.target === 'object' ? l.target.id : l.target
+        return (s === n.id && directLeft.has(t)) || (t === n.id && directLeft.has(s))
+      })
+      if (isLinkedToLeft) {
+        left2Nodes.push(n)
+      } else {
+        const isLinkedToRight = data.links.some(l => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source
+          const t = typeof l.target === 'object' ? l.target.id : l.target
+          return (s === n.id && directRight.has(t)) || (t === n.id && directRight.has(s))
+        })
+        if (isLinkedToRight) {
+          right2Nodes.push(n)
+        } else if (n.type === 'incose_source') {
+          right2Nodes.push(n)
+        } else {
+          left2Nodes.push(n)
+        }
+      }
+    })
+
+    layoutLeftTier(directLeftNodes, -160)
+    layoutRightTier(directRightNodes, 160)
+    layoutLeftTier(left2Nodes, -260)
+    layoutRightTier(right2Nodes, 260)
+
+    // Reverse citation links (Citing -> Cited) so knowledge flows Left -> Center -> Right
+    data.links = data.links.map(l => ({
+      ...l,
+      source: typeof l.target === 'object' ? l.target.id : l.target,
+      target: typeof l.source === 'object' ? l.source.id : l.source
+    }))
+  } else {
+    // If layoutMode === 'force', ensure fx, fy, fz are cleared (undefined)
+    if (data.nodes) {
+      data.nodes.forEach(n => {
+        delete n.fx
+        delete n.fy
+        delete n.fz
+        n.fx = undefined
+        n.fy = undefined
+        n.fz = undefined
+      })
+    }
+  }
+
   Graph.graphData(data)
 
   if (store.focusedClique) {
-    const membersSet = new Set(store.focusedClique.members);
-    
-    // 1. Weak repulsion inside the clique, strong outside
-    Graph.d3Force('charge').strength(node => membersSet.has(node.id) ? -10 : -60);
-    
-    // 2. Extremely short and strong springs inside the clique
-    Graph.d3Force('link').distance(link => {
-      const s = typeof link.source === 'object' ? link.source.id : link.source;
-      const t = typeof link.target === 'object' ? link.target.id : link.target;
-      if (membersSet.has(s) && membersSet.has(t)) return 1;
-      return 150; 
-    }).strength(link => {
-      const s = typeof link.source === 'object' ? link.source.id : link.source;
-      const t = typeof link.target === 'object' ? link.target.id : link.target;
-      if (membersSet.has(s) && membersSet.has(t)) return 2.0;
-      return 0.1;
-    });
+    if (store.vizSettings.collapseCliqueSuperNode) {
+      Graph.d3Force('charge').strength(node => node.type === 'clique_supernode' ? -200 : -60)
+      Graph.d3Force('link').distance(150).strength(0.3)
+    } else {
+      const membersSet = new Set(store.focusedClique.members);
+      Graph.d3Force('charge').strength(node => membersSet.has(node.id) ? -10 : -60);
+      Graph.d3Force('link').distance(link => {
+        const s = typeof link.source === 'object' ? link.source.id : link.source;
+        const t = typeof link.target === 'object' ? link.target.id : link.target;
+        if (membersSet.has(s) && membersSet.has(t)) return 1;
+        return 150; 
+      }).strength(link => {
+        const s = typeof link.source === 'object' ? link.source.id : link.source;
+        const t = typeof link.target === 'object' ? link.target.id : link.target;
+        if (membersSet.has(s) && membersSet.has(t)) return 2.0;
+        return 0.1;
+      });
+    }
   } else {
     // Reset to defaults
     if (defaultChargeForce) Graph.d3Force('charge', defaultChargeForce);
     if (defaultLinkForce) Graph.d3Force('link', defaultLinkForce);
   }
 
+  Graph.linkDirectionalParticles(link => getLinkParticles(link))
+  Graph.linkDirectionalParticleWidth(link => isLinkExcluded(link) ? 0.45 : 1.3)
+  Graph.linkDirectionalParticleColor(link => isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00')
+  if (store.isVizActive) {
+    Graph.resumeAnimation()
+  }
+
   Graph.nodeColor(Graph.nodeColor())
   Graph.nodeVal(Graph.nodeVal())
   Graph.nodeOpacity(Graph.nodeOpacity())
-  Graph.linkOpacity(Graph.linkOpacity())
+  Graph.linkColor(Graph.linkColor())
   Graph.linkWidth(Graph.linkWidth())
 
   // Центрируем камеру при изменении фокусного узла или настроек графа
@@ -551,7 +778,11 @@ const updateGraphData = () => {
 
   if (store.focusedClique) {
     const membersSet = new Set(store.focusedClique.members)
-    data = store.graphModel.getCliqueNetwork(membersSet)
+    data = store.graphModel.getCliqueNetwork(
+      membersSet, 
+      store.vizSettings.collapseCliqueSuperNode, 
+      store.focusedClique
+    )
   } else if (store.focusedNodeId) {
     // 1. Если выбран узел в Top Hubs, то к окружению должен применяться фильтр года выхода и отраслей.
     data = store.graphModel.getEgoNetwork(store.focusedNodeId, store, store.vizSettings)
@@ -598,6 +829,9 @@ watch([
   () => store.focusedNodeId, 
   () => store.focusedClique,
   () => store.vizSettings,
+  () => store.vizSettings.layoutMode,
+  () => store.vizSettings.collapseCliqueSuperNode,
+  () => store.vizSettings.enableParticles,
   () => store.selectedISSNs,
   () => store.displayFilters,
   () => store.isVizActive,
@@ -613,13 +847,27 @@ watch(() => store.activeFilters, () => {
       Graph.nodeColor(Graph.nodeColor())
       Graph.nodeVal(Graph.nodeVal())
       Graph.nodeOpacity(Graph.nodeOpacity())
-      Graph.linkOpacity(Graph.linkOpacity())
+      Graph.linkColor(Graph.linkColor())
       Graph.linkWidth(Graph.linkWidth())
+      Graph.linkDirectionalParticles(link => getLinkParticles(link))
+      Graph.linkDirectionalParticleWidth(link => isLinkExcluded(link) ? 0.45 : 1.3)
+      Graph.linkDirectionalParticleColor(link => isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00')
     }
   } else {
     updateGraphData()
   }
 }, { deep: true })
+
+watch(() => store.vizSettings.enableParticles, () => {
+  if (Graph) {
+    Graph.linkDirectionalParticles(link => getLinkParticles(link))
+    Graph.linkDirectionalParticleWidth(link => isLinkExcluded(link) ? 0.45 : 1.3)
+    Graph.linkDirectionalParticleColor(link => isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00')
+    if (store.isVizActive) {
+      Graph.resumeAnimation()
+    }
+  }
+})
 
 watch(() => store.isVizActive, (isActive) => {
   if (!Graph) return
@@ -787,4 +1035,13 @@ onBeforeUnmount(() => {
 .color-dot.target { background: #555566; }
 .color-dot.irrel { background: #8b0000; }
 .color-dot.ego { background: #ffaa00; box-shadow: 0 0 5px #ffaa00; }
+.legend-flow-note {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #444;
+  font-size: 10px;
+  color: #ffaa00;
+  line-height: 1.4;
+  max-width: 260px;
+}
 </style>

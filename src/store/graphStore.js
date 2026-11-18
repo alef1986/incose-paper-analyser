@@ -63,7 +63,10 @@ export const useGraphStore = defineStore('graph', {
       showCore: true,
       showCanon: true,
       showEnv: true,
-      hideLeaves: false
+      hideLeaves: false,
+      layoutMode: 'force',
+      collapseCliqueSuperNode: true,
+      enableParticles: true
     },
     
     isModalOpen: false,

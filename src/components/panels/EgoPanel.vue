@@ -97,6 +97,22 @@
         </label>
 
         <label class="setting-item">
+          <span class="s-label">Layout Mode (Focal Node):</span>
+          <select v-model="store.vizSettings.layoutMode" class="s-select">
+            <option value="force">Standard 3D Force</option>
+            <option value="translationFlow">3-Tier Translation Flow (Left ➔ Right)</option>
+          </select>
+        </label>
+
+        <label class="setting-item checkbox-label">
+          <input type="checkbox" v-model="store.vizSettings.enableParticles" /> Animate Knowledge Flow Particles
+        </label>
+
+        <label class="setting-item checkbox-label">
+          <input type="checkbox" v-model="store.vizSettings.collapseCliqueSuperNode" /> Collapse Selected Clique into Virtual Super-Node
+        </label>
+
+        <label class="setting-item">
           <span class="s-label">Link Direction:</span>
           <select v-model="store.vizSettings.direction" class="s-select">
             <option value="both">Both (In & Out)</option>
