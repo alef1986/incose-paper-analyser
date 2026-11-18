@@ -32,18 +32,71 @@
       </h3>
       
       <div v-show="isEchoChambersOpen" class="collapsible-content">
-        <div class="echo-settings" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <label style="font-size: 10px; color: #aaa; margin: 0;">Min Size: <b style="color:#fff">{{ store.echoMinSize }}</b></label>
-            <input type="range" v-model.number="store.echoMinSize" min="3" max="50" style="width: 100px; height: 4px;" />
+        <div class="echo-settings">
+          <div class="echo-mode-row">
+            <span class="echo-field-label">Metric:</span>
+            <div class="echo-mode-toggle">
+              <button 
+                type="button" 
+                class="echo-mode-btn" 
+                :class="{ active: store.echoMetricMode === 'core' }"
+                @click="store.echoMetricMode = 'core'"
+              >
+                Core Insularity (vs INCOSE)
+              </button>
+              <button 
+                type="button" 
+                class="echo-mode-btn" 
+                :class="{ active: store.echoMetricMode === 'total' }"
+                @click="store.echoMetricMode = 'total'"
+              >
+                Total Closure (vs All)
+              </button>
+            </div>
           </div>
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <label style="font-size: 10px; color: #aaa; margin: 0;">Max Size: <b style="color:#fff">{{ store.echoMaxSize }}</b></label>
-            <input type="range" v-model.number="store.echoMaxSize" min="10" max="2000" step="10" style="width: 100px; height: 4px;" />
+
+          <div class="echo-inputs-grid">
+            <div class="echo-num-group">
+              <label class="echo-num-label">Min Papers:</label>
+              <input 
+                type="number" 
+                v-model.number="store.echoMinSize" 
+                min="3" 
+                max="200" 
+                class="echo-number-input" 
+              />
+            </div>
+            <div class="echo-num-group">
+              <label class="echo-num-label">Max Papers:</label>
+              <input 
+                type="number" 
+                v-model.number="store.echoMaxSize" 
+                min="5" 
+                max="5000" 
+                step="10" 
+                class="echo-number-input" 
+              />
+            </div>
+            <div class="echo-num-group">
+              <label class="echo-num-label">Min %:</label>
+              <input 
+                type="number" 
+                v-model.number="echoMinInsularityPercent" 
+                min="0" 
+                max="100" 
+                step="5" 
+                class="echo-number-input" 
+              />
+            </div>
           </div>
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <label style="font-size: 10px; color: #aaa; margin: 0;">Insularity: <b style="color:#d9534f">{{ (store.echoMinInsularity * 100).toFixed(0) }}%</b></label>
-            <input type="range" v-model.number="store.echoMinInsularity" min="0.1" max="1.0" step="0.05" style="width: 100px; height: 4px;" />
+
+          <div class="echo-resample-row">
+            <button class="nav-btn echo-resample-btn" @click="store.resampleEchoChambers(10)">
+              🎲 Deep Statistical Resample (10x Runs)
+            </button>
+            <div class="echo-cluster-counter">
+              Found: {{ store.echoChambers.length }} of {{ store.rawEchoCommunities.length }} clusters
+            </div>
           </div>
         </div>
 
@@ -58,13 +111,17 @@
             @click="store.setFocusedClique(chamber)"
           >
             <div style="display: flex; flex-direction: column; width: 100%;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <span style="color: #00bfff; font-weight: bold; font-size: 11px;">Clique #{{ idx + 1 }} ({{ chamber.size }} papers)</span>
-                <span class="badge" style="background: rgba(217, 83, 79, 0.2); color: #d9534f; border-color: #d9534f;">Insularity: {{ (chamber.insularity * 100).toFixed(1) }}%</span>
+                <span class="badge" style="background: rgba(217, 83, 79, 0.2); color: #d9534f; border-color: #d9534f;">
+                  Core Insul: {{ (chamber.coreInsularity * 100).toFixed(0) }}%
+                </span>
               </div>
               <span style="font-size: 10px; color: #aaa; margin-bottom: 2px;"><b>Top Authors:</b> {{ chamber.topAuthors }}</span>
               <span style="font-size: 10px; color: #888;"><b>Anchor Paper:</b> <i style="color:#ccc;">{{ chamber.topPaperTitle.length > 40 ? chamber.topPaperTitle.substring(0,37)+'...' : chamber.topPaperTitle }}</i></span>
-              <span style="font-size: 9px; color: #666; margin-top: 4px;">{{ chamber.internalLinks }} internal refs | {{ chamber.totalEnvOut }} external refs</span>
+              <span style="font-size: 9px; color: #888; margin-top: 4px;">
+                Total Closure: {{ (chamber.totalClosure * 100).toFixed(0) }}% | {{ chamber.internalLinks }} internal / {{ chamber.totalEnvOut }} external refs
+              </span>
             </div>
           </li>
         </ul>
@@ -198,6 +255,13 @@ const listSearchQuery = ref('')
 
 const hasActiveFilters = computed(() => {
   return !!store.activeFilters.taxonomy || store.activeFilters.years.length > 0
+})
+
+const echoMinInsularityPercent = computed({
+  get: () => Math.round((store.echoMinInsularity ?? 0.5) * 100),
+  set: (val) => {
+    store.echoMinInsularity = Math.max(0, Math.min(100, Number(val) || 0)) / 100
+  }
 })
 
 const handleScroll = (event) => {
@@ -544,5 +608,118 @@ h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(
   color: #666;
   border-color: #333;
   cursor: not-allowed;
+}
+
+/* Echo Chambers Controls */
+.echo-settings {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.echo-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.echo-field-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.echo-mode-toggle {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+.echo-mode-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #aaa;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+.echo-mode-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+.echo-mode-btn.active {
+  background: rgba(0, 191, 255, 0.2);
+  border-color: #00bfff;
+  color: #00bfff;
+  font-weight: bold;
+}
+.echo-inputs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.echo-num-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.echo-num-label {
+  font-size: 9.5px;
+  color: #aaa;
+  white-space: nowrap;
+}
+.echo-number-input {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+}
+.echo-number-input:focus {
+  outline: none;
+  border-color: #00bfff;
+}
+.echo-resample-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+.echo-resample-btn {
+  width: 100%;
+  padding: 6px 8px;
+  background: rgba(155, 89, 182, 0.18);
+  border: 1px solid rgba(155, 89, 182, 0.5);
+  color: #d2a8e8;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10.5px;
+  transition: all 0.2s ease;
+}
+.echo-resample-btn:hover {
+  background: rgba(155, 89, 182, 0.35);
+  border-color: #9b59b6;
+  color: #fff;
+}
+.echo-cluster-counter {
+  font-size: 9.5px;
+  color: #888;
+  text-align: center;
+}
+.echo-cluster-counter b {
+  color: #00bfff;
 }
 </style>

@@ -42,7 +42,10 @@ export const useGraphStore = defineStore('graph', {
     focusedClique: null,
     echoMinSize: 4,
     echoMaxSize: 500,
-    echoMinInsularity: 0.4,
+    echoMinInsularity: 0.5,
+    echoSeed: 42,
+    echoRuns: 5,
+    echoMetricMode: 'core',
     isVizActive: false,
     activeNodeIds: new Set(),
     citationFrequencyFilter: false,
@@ -329,6 +332,11 @@ export const useGraphStore = defineStore('graph', {
       }
     },
 
+    resampleEchoChambers(runs = 10) {
+      this.echoRuns = runs
+      this.echoSeed = Math.floor(Math.random() * 100000) + 1
+    },
+
     setFocusedNode(nodeId) {
       this.focusedClique = null
       if (this.focusedNodeId === nodeId) {
@@ -598,7 +606,7 @@ export const useGraphStore = defineStore('graph', {
     filteredCoreNodes(state) {
       if (!state.graphModel) return [];
       let allCore = Array.from(state.graphModel.nodes.values()).filter(n => n.type === 'incose_source');
-      if (state.citationFrequencyFilter) {
+      if (state.metrics.isCitationFilterActive) {
         allCore = allCore.filter(node => state.activeNodeIds.has(node.id));
       }
       
@@ -844,140 +852,238 @@ export const useGraphStore = defineStore('graph', {
       return result;
     },
 
-    echoChambers(state) {
+    rawEchoCommunities(state) {
       if (!state.graphModel) return [];
-      
-      // 1. Extract Core Nodes & Build Undirected Adjacency
+
+      // 1. Collect active core nodes
       const coreNodes = [];
       const adj = new Map();
       state.graphModel.nodes.forEach(n => {
-        if (n.type === 'incose_source') {
+        if (n.type === 'incose_source' && state.activeNodeIds.has(n.id)) {
           coreNodes.push(n.id);
           adj.set(n.id, []);
         }
       });
 
+      if (coreNodes.length === 0) return [];
+      const coreNodeSet = new Set(coreNodes);
+
       state.graphModel.links.forEach(l => {
         const s = typeof l.source === 'object' ? l.source.id : l.source;
         const t = typeof l.target === 'object' ? l.target.id : l.target;
-        if (adj.has(s) && adj.has(t)) {
+        if (s !== t && coreNodeSet.has(s) && coreNodeSet.has(t)) {
           adj.get(s).push(t);
-          adj.get(t).push(s); // Undirected for community detection
+          adj.get(t).push(s);
         }
       });
 
-      // 2. Label Propagation Algorithm (LPA)
-      const labels = new Map();
-      coreNodes.forEach(id => labels.set(id, id));
+      // 2. Mulberry32 PRNG seeded with state.echoSeed
+      let a = (state.echoSeed || 42) >>> 0;
+      const rand = () => {
+        let t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
 
-      for (let iter = 0; iter < 20; iter++) {
-        let changed = false;
-        const nodes = [...coreNodes].sort(() => Math.random() - 0.5); // Shuffle
-        for (const node of nodes) {
-          const neighbors = adj.get(node);
-          if (neighbors.length === 0) continue;
-          
-          const labelCounts = new Map();
-          for (const neighbor of neighbors) {
-            const l = labels.get(neighbor);
-            labelCounts.set(l, (labelCounts.get(l) || 0) + 1);
+      // 3. Multi-run LPA
+      const runs = Math.max(1, state.echoRuns || 1);
+      let bestPartition = null;
+      let bestScore = -1;
+
+      for (let r = 0; r < runs; r++) {
+        const labels = new Map();
+        coreNodes.forEach(id => labels.set(id, id));
+
+        for (let iter = 0; iter < 20; iter++) {
+          let changed = false;
+          const nodes = coreNodes.slice();
+          for (let i = nodes.length - 1; i > 0; i--) {
+            const j = Math.floor(rand() * (i + 1));
+            const temp = nodes[i];
+            nodes[i] = nodes[j];
+            nodes[j] = temp;
           }
-          
-          let maxLabel = labels.get(node);
-          let maxCount = 0;
-          for (const [l, count] of labelCounts.entries()) {
-            if (count > maxCount) {
-              maxCount = count;
-              maxLabel = l;
+
+          for (const node of nodes) {
+            const neighbors = adj.get(node);
+            if (!neighbors || neighbors.length === 0) continue;
+
+            const labelCounts = new Map();
+            for (const neighbor of neighbors) {
+              const l = labels.get(neighbor);
+              labelCounts.set(l, (labelCounts.get(l) || 0) + 1);
+            }
+
+            let maxCount = 0;
+            let candidates = [];
+            for (const [l, count] of labelCounts.entries()) {
+              if (count > maxCount) {
+                maxCount = count;
+                candidates = [l];
+              } else if (count === maxCount) {
+                candidates.push(l);
+              }
+            }
+
+            const currentLabel = labels.get(node);
+            let chosenLabel = currentLabel;
+            if (candidates.length === 1) {
+              chosenLabel = candidates[0];
+            } else if (candidates.length > 1) {
+              if (candidates.includes(currentLabel)) {
+                chosenLabel = currentLabel;
+              } else {
+                chosenLabel = candidates[Math.floor(rand() * candidates.length)];
+              }
+            }
+
+            if (labels.get(node) !== chosenLabel) {
+              labels.set(node, chosenLabel);
+              changed = true;
             }
           }
-          
-          if (labels.get(node) !== maxLabel) {
-            labels.set(node, maxLabel);
-            changed = true;
-          }
+          if (!changed) break;
         }
-        if (!changed) break;
+
+        const communities = new Map();
+        for (const [node, label] of labels.entries()) {
+          if (!communities.has(label)) communities.set(label, []);
+          communities.get(label).push(node);
+        }
+
+        let score = 0;
+        state.graphModel.links.forEach(l => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          if (coreNodeSet.has(s) && coreNodeSet.has(t)) {
+            const labelS = labels.get(s);
+            const labelT = labels.get(t);
+            if (labelS === labelT) {
+              const comm = communities.get(labelS);
+              if (comm && comm.length <= 500) {
+                score++;
+              }
+            }
+          }
+        });
+
+        if (score > bestScore || bestPartition === null) {
+          bestScore = score;
+          bestPartition = communities;
+        }
       }
 
-      // 3. Group Communities
-      const communities = new Map();
-      for (const [node, label] of labels.entries()) {
-        if (!communities.has(label)) communities.set(label, []);
-        communities.get(label).push(node);
-      }
+      if (!bestPartition) return [];
 
-      // 4. Calculate Insularity
+      // 4. Compute metrics for each community with members.length >= 3
       const results = [];
-      for (const [label, members] of communities.entries()) {
-        if (members.length < state.echoMinSize || members.length > state.echoMaxSize) continue; // Ignore tiny isolates or monster component
+      for (const [label, members] of bestPartition.entries()) {
+        if (members.length < 3) continue;
 
         let internalLinks = 0;
+        let coreOutgoing = 0;
         let totalOutgoing = 0;
         let totalEnvOut = 0;
         const memberSet = new Set(members);
-        
+
         members.forEach(m => {
-           const outLinks = state.graphModel.adjacencyList.get(m) || [];
-           outLinks.forEach(l => {
-             const s = typeof l.source === 'object' ? l.source.id : l.source;
-             const t = typeof l.target === 'object' ? l.target.id : l.target;
-             if (s === m) {
-               totalOutgoing++;
-               if (memberSet.has(t)) internalLinks++;
-               
-               const tNode = state.graphModel.nodes.get(t);
-               if (tNode && tNode.type !== 'incose_source' && tNode.type !== 'irrelevant') {
-                 totalEnvOut++;
-               }
-             }
-           });
+          const outLinks = state.graphModel.adjacencyList.get(m) || [];
+          outLinks.forEach(l => {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            if (s === m) {
+              const tNode = state.graphModel.nodes.get(t);
+              if (!tNode || tNode.type === 'irrelevant') return;
+
+              totalOutgoing++;
+
+              if (tNode.type === 'incose_source') {
+                coreOutgoing++;
+                if (memberSet.has(t)) {
+                  internalLinks++;
+                }
+              } else if (tNode.type === 'assimilated_canon' || tNode.type === 'external_or_unknown') {
+                totalEnvOut++;
+              }
+            }
+          });
         });
 
-        const insularity = totalOutgoing > 0 ? (internalLinks / totalOutgoing) : 0;
-        
-        // Filter for highly insular chambers (e.g. > 50% internal citing)
-        if (insularity >= state.echoMinInsularity) {
-          const authorsMap = new Map();
-          let topPaper = null;
-          let maxIn = -1;
-          
-          members.forEach(m => {
-             const node = state.graphModel.nodes.get(m);
-             if (node) {
-               if (node.inDegree > maxIn) {
-                 maxIn = node.inDegree;
-                 topPaper = node;
-               }
-               const auths = (node.authors || 'Unknown').split(', ');
-               auths.forEach(a => {
-                 if (a && a !== 'Unknown') authorsMap.set(a, (authorsMap.get(a) || 0) + 1);
-               });
-             }
-          });
-          
-          const topAuthors = Array.from(authorsMap.entries())
-            .sort((a,b) => b[1] - a[1])
-            .slice(0, 2)
-            .map(x => x[0])
-            .join(', ');
+        const coreInsularity = coreOutgoing > 0 ? (internalLinks / coreOutgoing) : 0;
+        const totalClosure = totalOutgoing > 0 ? (internalLinks / totalOutgoing) : 0;
 
-          results.push({
-            id: label,
-            size: members.length,
-            insularity,
-            internalLinks,
-            totalOutgoing,
-            totalEnvOut,
-            topPaperTitle: topPaper ? topPaper.title : 'Unknown',
-            topPaperId: topPaper ? topPaper.id : null,
-            topAuthors: topAuthors || 'Unknown',
-            members: members
-          });
-        }
+        const authorsMap = new Map();
+        let topPaper = null;
+        let maxIn = -1;
+
+        members.forEach(m => {
+          const node = state.graphModel.nodes.get(m);
+          if (node) {
+            if (node.inDegree > maxIn) {
+              maxIn = node.inDegree;
+              topPaper = node;
+            }
+            const auths = (node.authors || 'Unknown').split(', ');
+            auths.forEach(a => {
+              const auth = a.trim();
+              if (auth && auth !== 'Unknown') {
+                authorsMap.set(auth, (authorsMap.get(auth) || 0) + 1);
+              }
+            });
+          }
+        });
+
+        const topAuthors = Array.from(authorsMap.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2)
+          .map(x => x[0])
+          .join(', ');
+
+        results.push({
+          id: label,
+          size: members.length,
+          internalLinks,
+          coreOutgoing,
+          totalOutgoing,
+          totalEnvOut,
+          coreInsularity,
+          totalClosure,
+          topPaperTitle: topPaper ? topPaper.title : 'Unknown',
+          topPaperId: topPaper ? topPaper.id : null,
+          topAuthors: topAuthors || 'Unknown',
+          members
+        });
       }
 
-      return results.sort((a, b) => b.insularity - a.insularity);
+      return results;
+    },
+
+
+    echoChambers(state) {
+      const raw = this.rawEchoCommunities;
+      if (!raw || raw.length === 0) return [];
+
+      const minSize = state.echoMinSize ?? 4;
+      const maxSize = state.echoMaxSize ?? 500;
+      const minInsularity = state.echoMinInsularity ?? 0.5;
+      const isCore = (state.echoMetricMode || 'core') === 'core';
+
+      return raw
+        .map(c => {
+          const score = isCore ? c.coreInsularity : c.totalClosure;
+          return {
+            ...c,
+            insularity: score
+          };
+        })
+        .filter(c => c.size >= minSize && c.size <= maxSize && c.insularity >= minInsularity)
+        .sort((a, b) => {
+          if (b.insularity !== a.insularity) {
+            return b.insularity - a.insularity;
+          }
+          return b.size - a.size;
+        });
     }
   }
 })
