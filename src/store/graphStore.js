@@ -1083,6 +1083,8 @@ export const useGraphStore = defineStore('graph', {
         let totalOutgoing = 0;
         let totalEnvOut = 0;
         const memberSet = new Set(members);
+        const envFieldCounts = new Map();
+        let totalValidFieldRefs = 0;
 
         members.forEach(m => {
           const outLinks = state.graphModel.adjacencyList.get(m) || [];
@@ -1102,6 +1104,11 @@ export const useGraphStore = defineStore('graph', {
                 }
               } else if (tNode.type === 'assimilated_canon' || tNode.type === 'external_or_unknown') {
                 totalEnvOut++;
+                const field = tNode.field ? tNode.field.trim() : null;
+                if (field && field !== 'Unknown') {
+                  envFieldCounts.set(field, (envFieldCounts.get(field) || 0) + 1);
+                  totalValidFieldRefs++;
+                }
               }
             }
           });
@@ -1109,6 +1116,17 @@ export const useGraphStore = defineStore('graph', {
 
         const coreInsularity = coreOutgoing > 0 ? (internalLinks / coreOutgoing) : 0;
         const totalClosure = totalOutgoing > 0 ? (internalLinks / totalOutgoing) : 0;
+
+        const topExternalFields = totalValidFieldRefs > 0
+          ? Array.from(envFieldCounts.entries())
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 2)
+              .map(([name, count]) => ({
+                name,
+                count,
+                pct: Math.round((count / totalValidFieldRefs) * 100)
+              }))
+          : [];
 
         const authorsMap = new Map();
         let topPaper = null;
@@ -1149,6 +1167,7 @@ export const useGraphStore = defineStore('graph', {
           topPaperTitle: topPaper ? topPaper.title : 'Unknown',
           topPaperId: topPaper ? topPaper.id : null,
           topAuthors: topAuthors || 'Unknown',
+          topExternalFields,
           members
         });
       }

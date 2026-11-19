@@ -119,6 +119,16 @@
               </div>
               <span style="font-size: 10px; color: #aaa; margin-bottom: 2px;"><b>Top Authors:</b> {{ chamber.topAuthors }}</span>
               <span style="font-size: 10px; color: #888;"><b>Anchor Paper:</b> <i style="color:#ccc;">{{ chamber.topPaperTitle.length > 40 ? chamber.topPaperTitle.substring(0,37)+'...' : chamber.topPaperTitle }}</i></span>
+              
+              <!-- Epistemic Diet (Top 2 external OpenAlex Fields) -->
+              <div class="diet-row" v-if="chamber.topExternalFields && chamber.topExternalFields.length > 0">
+                <span class="diet-label">Diet:</span>
+                <span class="diet-tag" v-for="f in chamber.topExternalFields" :key="f.name">{{ f.name }} {{ f.pct }}%</span>
+              </div>
+              <div class="diet-row" v-else-if="chamber.totalEnvOut === 0">
+                <span class="diet-tag diet-closed">Pure Self-Reference (0% External)</span>
+              </div>
+
               <span style="font-size: 9px; color: #888; margin-top: 4px;">
                 Total Closure: {{ (chamber.totalClosure * 100).toFixed(0) }}% | {{ chamber.internalLinks }} internal / {{ chamber.totalEnvOut }} external refs
               </span>
@@ -721,5 +731,37 @@ h2 { margin-top: 0; font-size: 16px; color: #fff; border-bottom: 1px solid rgba(
 }
 .echo-cluster-counter b {
   color: #00bfff;
+}
+
+/* Epistemic Diet mini-badges */
+.diet-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  margin-bottom: 1px;
+}
+.diet-label {
+  font-size: 9px;
+  color: #888;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.diet-tag {
+  font-size: 8.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(0, 191, 255, 0.12);
+  border: 1px solid rgba(0, 191, 255, 0.35);
+  color: #00bfff;
+  white-space: nowrap;
+}
+.diet-tag.diet-closed {
+  background: rgba(217, 83, 79, 0.15);
+  border-color: rgba(217, 83, 79, 0.45);
+  color: #ff6b6b;
+  font-weight: 600;
 }
 </style>

@@ -18,10 +18,38 @@
           <strong class="term">Irritation Rejection Rate:</strong> One-off perturbations (<span class="code-pill">inDegree = 1</span>) that failed to condense meaning into systemic memory.<br />
           <strong class="term">Epistemic Lag:</strong> Mean temporal distance (<span class="code-pill">Year<sub>Core</sub> − Year<sub>Env</sub></span>) revealing reliance on outdated classics vs contemporary science.
         </p>
+
+        <!-- Clean Tab Bar -->
+        <div class="view-tabs">
+          <button 
+            type="button" 
+            class="tab-btn" 
+            :class="{ active: activeTab === 'table' }" 
+            @click="setTab('table')"
+          >
+            📋 Audit Table (3-Tier)
+          </button>
+          <button 
+            type="button" 
+            class="tab-btn" 
+            :class="{ active: activeTab === 'quadrants' }" 
+            @click="setTab('quadrants')"
+          >
+            🎯 2×2 Irritation Quadrants
+          </button>
+          <button 
+            type="button" 
+            class="tab-btn" 
+            :class="{ active: activeTab === 'absent' }" 
+            @click="setTab('absent')"
+          >
+            🕳 Absolute Blind Spots
+          </button>
+        </div>
       </div>
 
-      <!-- Quick Metrics Ribbon -->
-      <div class="summary-ribbon" v-if="store.disciplinaryBlindSpots.length > 0">
+      <!-- Quick Metrics Ribbon (Audited Corpus) -->
+      <div class="summary-ribbon" v-if="store.disciplinaryBlindSpots.length > 0 && activeTab !== 'absent'">
         <div class="ribbon-metric">
           <span class="r-label">Audited Domains</span>
           <span class="r-val">{{ store.disciplinaryBlindSpots.length }}</span>
@@ -48,7 +76,7 @@
       </div>
 
       <!-- Interactive Table -->
-      <div class="table-wrapper" v-if="store.disciplinaryBlindSpots.length > 0">
+      <div class="table-wrapper" v-show="activeTab === 'table'" v-if="store.disciplinaryBlindSpots.length > 0">
         <table class="blind-spots-table">
           <thead>
             <tr>
@@ -209,24 +237,266 @@
         </table>
       </div>
 
-      <div v-else class="empty-state">
+      <!-- 🎯 2x2 Irritation Typology (Quadrants) Tab -->
+      <div class="quadrants-wrapper" v-show="activeTab === 'quadrants'" v-if="store.disciplinaryBlindSpots.length > 0">
+        <!-- Controls above canvas -->
+        <div class="quadrant-controls">
+          <div class="control-group">
+            <span class="control-label">Granularity:</span>
+            <div class="control-toggle">
+              <button 
+                type="button" 
+                class="ctrl-btn" 
+                :class="{ active: granularity === 'fields' }" 
+                @click="setGranularity('fields')"
+              >
+                Fields (Level 2)
+              </button>
+              <button 
+                type="button" 
+                class="ctrl-btn" 
+                :class="{ active: granularity === 'subfields' }" 
+                @click="setGranularity('subfields')"
+              >
+                Subfields (Level 3)
+              </button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <span class="control-label">Y-Axis Metric:</span>
+            <div class="control-toggle">
+              <button 
+                type="button" 
+                class="ctrl-btn" 
+                :class="{ active: yMetric === 'translator' }" 
+                @click="setYMetric('translator')"
+              >
+                Translator-Backed (%)
+              </button>
+              <button 
+                type="button" 
+                class="ctrl-btn" 
+                :class="{ active: yMetric === 'assimilation' }" 
+                @click="setYMetric('assimilation')"
+              >
+                Assimilation Rate (100% − Rejection %)
+              </button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="control-checkbox">
+              <input type="checkbox" v-model="hideOutliers" @change="onToggleOutliers" />
+              <span>Hide tiny outliers (&lt; 20 refs)</span>
+            </label>
+          </div>
+
+          <div class="quadrant-stat-pill" v-if="flattenedData.length > 0">
+            Plotting <b>{{ flattenedData.length }}</b> {{ granularity === 'fields' ? 'Fields' : 'Subfields' }}
+          </div>
+        </div>
+
+        <!-- Interactive ECharts Scatter Canvas -->
+        <div ref="chartCanvasRef" class="quadrant-chart-canvas"></div>
+      </div>
+
+      <!-- 🕳 Tab 3: Absolute Blind Spots (0 & <20 Refs) -->
+      <div class="absent-wrapper" v-show="activeTab === 'absent'">
+        <!-- Loading State -->
+        <div v-if="isTaxonomyLoading && !canonicalTaxonomy" class="absent-loading-state">
+          <div class="loading-spinner"></div>
+          <span>Fetching canonical OpenAlex taxonomy catalog (26 Fields / 252 Subfields)...</span>
+        </div>
+
+        <!-- Error State -->
+        <div v-else-if="taxonomyError && !canonicalTaxonomy" class="absent-error-state">
+          <span class="err-icon">⚠️</span>
+          <span>{{ taxonomyError }}</span>
+          <button class="retry-btn" @click="fetchCanonicalTaxonomy">Retry OpenAlex Sync</button>
+        </div>
+
+        <template v-else-if="canonicalTaxonomy">
+          <!-- 1. Compact Summary Strip (4 KPI boxes) -->
+          <div class="absent-kpi-ribbon">
+            <div class="kpi-box">
+              <span class="kpi-label">Canonical {{ absentGranularity === 'fields' ? 'Fields' : 'Subfields' }}</span>
+              <span class="kpi-val">{{ absentAnalysis.totalCanonical }}</span>
+            </div>
+            <div class="kpi-box kpi-danger">
+              <span class="kpi-label">Absolute Blind Spots (0 refs)</span>
+              <span class="kpi-val val-danger">
+                {{ absentAnalysis.zeroCount }}
+                <small class="kpi-pct">({{ absentAnalysis.zeroPct }}%)</small>
+              </span>
+            </div>
+            <div class="kpi-box kpi-warning">
+              <span class="kpi-label">Marginal (&lt;20 refs)</span>
+              <span class="kpi-val val-warning">
+                {{ absentAnalysis.marginalCount }}
+                <small class="kpi-pct">({{ absentAnalysis.marginalPct }}%)</small>
+              </span>
+            </div>
+            <div class="kpi-box kpi-success">
+              <span class="kpi-label">Active Horizon (≥20 refs)</span>
+              <span class="kpi-val val-success">
+                {{ absentAnalysis.activeCount }}
+                <small class="kpi-pct">({{ absentAnalysis.activePct }}%)</small>
+              </span>
+            </div>
+          </div>
+
+          <!-- Controls: Granularity switch -->
+          <div class="absent-controls">
+            <div class="control-group">
+              <span class="control-label">Taxonomy Depth:</span>
+              <div class="control-toggle">
+                <button 
+                  type="button" 
+                  class="ctrl-btn" 
+                  :class="{ active: absentGranularity === 'subfields' }" 
+                  @click="setAbsentGranularity('subfields')"
+                >
+                  Subfields (252)
+                </button>
+                <button 
+                  type="button" 
+                  class="ctrl-btn" 
+                  :class="{ active: absentGranularity === 'fields' }" 
+                  @click="setAbsentGranularity('fields')"
+                >
+                  Fields (26)
+                </button>
+              </div>
+            </div>
+            <div class="absent-meta-note">
+              Benchmarking against complete canonical OpenAlex science catalog (respects active journal/ISSN filters)
+            </div>
+          </div>
+
+          <!-- 2. ECharts 100% Horizontal Stacked Bar Chart -->
+          <div class="horizon-chart-card">
+            <div class="chart-header-sub">
+              <span>Epistemic Horizon Coverage by Domain (100% Stacked)</span>
+            </div>
+            <div ref="horizonChartRef" class="horizon-chart-canvas"></div>
+          </div>
+
+          <!-- 3. Grouped Tag Lists below the chart -->
+          <div class="absent-tags-container">
+            <!-- Absolute Blind Spots (0 Citations) -->
+            <div class="absent-section section-zero">
+              <div class="absent-section-header">
+                <h4 class="absent-section-title title-danger">
+                  🕳 Absolute Blind Spots (0 Citations)
+                </h4>
+                <span class="section-count-badge badge-danger">{{ absentAnalysis.zeroCount }} {{ absentGranularity }} ignored</span>
+              </div>
+              <p class="section-desc">External disciplines completely absent from INCOSE systemic resonance (0 references across corpus).</p>
+              
+              <div class="domain-groups-list">
+                <template v-for="dGroup in absentAnalysis.domainGroups" :key="'zero-' + dGroup.domainName">
+                  <div class="domain-tag-group" v-if="dGroup.zeroItems.length > 0">
+                    <span class="domain-group-header" :style="{ color: getDomainColor(dGroup.domainName) }">
+                      {{ dGroup.domainName }} ({{ dGroup.zeroItems.length }}):
+                    </span>
+                    <div class="tag-cloud">
+                      <span 
+                        class="absent-tag tag-zero" 
+                        v-for="item in dGroup.zeroItems" 
+                        :key="item.name"
+                        title="0 references in INCOSE corpus"
+                      >
+                        {{ item.name }}
+                      </span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Marginal / Trace Imports (1–19 Citations) -->
+            <div class="absent-section section-marginal">
+              <div class="absent-section-header">
+                <h4 class="absent-section-title title-warning">
+                  ⚡ Marginal / Trace Imports (1–19 Citations)
+                </h4>
+                <span class="section-count-badge badge-warning">{{ absentAnalysis.marginalCount }} {{ absentGranularity }} with trace citations</span>
+              </div>
+              <p class="section-desc">Weak one-off perturbations. Click any tag to slice the 3D dashboard to that discipline.</p>
+
+              <div class="domain-groups-list">
+                <template v-for="dGroup in absentAnalysis.domainGroups" :key="'marginal-' + dGroup.domainName">
+                  <div class="domain-tag-group" v-if="dGroup.marginalItems.length > 0">
+                    <span class="domain-group-header" :style="{ color: getDomainColor(dGroup.domainName) }">
+                      {{ dGroup.domainName }} ({{ dGroup.marginalItems.length }}):
+                    </span>
+                    <div class="tag-cloud">
+                      <span 
+                        class="absent-tag tag-marginal tag-clickable" 
+                        v-for="item in dGroup.marginalItems" 
+                        :key="item.name"
+                        @click="applyAbsentFilter(item)"
+                        :title="`Click to filter 3D view to ${item.name} (${item.totalCitations} citations)`"
+                      >
+                        {{ item.name }} <b class="tag-cnt">({{ item.totalCitations }})</b>
+                      </span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div v-if="store.disciplinaryBlindSpots.length === 0 && activeTab !== 'absent'" class="empty-state">
         <p>No external domain classifications found in the current dataset.</p>
         <span class="empty-hint">Load an OpenAlex-enriched JSON or run batch metadata enrichment to unlock epistemic blind spots analysis.</span>
       </div>
 
       <div class="modal-footer">
-        <span class="footer-tip">💡 Click any domain to set a 3D network slice and close this modal.</span>
+        <span class="footer-tip">
+          {{ activeTab === 'table' 
+              ? '💡 Click any domain to set a 3D network slice and close this modal.' 
+              : (activeTab === 'quadrants'
+                  ? '💡 Click any bubble to slice the 3D network to that Field/Subfield and close this modal.'
+                  : '💡 Click any Marginal tag (1–19 citations) to filter the 3D network to that discipline and close this modal.') }}
+        </span>
         <button class="footer-close-btn" @click="close">Close Audit</button>
       </div>
     </div>
   </div>
 </template>
 
+<script>
+// Module-level cache for canonical OpenAlex taxonomy catalog (persists across modal toggles)
+let canonicalTaxonomyCache = null
+let canonicalTaxonomyLoadingPromise = null
+</script>
+
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import * as echarts from 'echarts'
 import { useGraphStore, computeLagStats } from '../../store/graphStore.js'
 
 const store = useGraphStore()
+
+const activeTab = ref('table') // 'table' | 'quadrants' | 'absent'
+const granularity = ref('fields') // 'fields' | 'subfields'
+const yMetric = ref('translator') // 'translator' | 'assimilation'
+const hideOutliers = ref(true) // Hide tiny outliers (< 20 citations)
+const chartCanvasRef = ref(null)
+let chartInstance = null
+
+// --- Tab 3: Canonical OpenAlex Catalog & Absent Blind Spots State ---
+const absentGranularity = ref('subfields') // 'subfields' | 'fields'
+const horizonChartRef = ref(null)
+let horizonChartInstance = null
+
+const canonicalTaxonomy = ref(canonicalTaxonomyCache)
+const isTaxonomyLoading = ref(false)
+const taxonomyError = ref(null)
 
 const expandedDomains = ref(new Set())
 const expandedFields = ref(new Set())
@@ -314,6 +584,837 @@ const overallLagStats = computed(() => {
   })
   return computeLagStats(allLags)
 })
+
+// --- 🎯 2x2 Irritation Typology (Quadrants) Logic ---
+const DOMAIN_COLOR_MAP = {
+  'Physical Sciences': '#00bfff',
+  'Formal Sciences': '#9b59b6',
+  'Social Sciences': '#f0ad4e',
+  'Life Sciences': '#5cb85c',
+  'Health Sciences': '#d9534f'
+}
+const DEFAULT_PALETTE = ['#00bfff', '#5cb85c', '#f0ad4e', '#d9534f', '#9b59b6', '#3498db', '#1abc9c', '#e67e22', '#e74c3c']
+
+const getDomainColor = (domainName, idx) => {
+  if (DOMAIN_COLOR_MAP[domainName]) return DOMAIN_COLOR_MAP[domainName]
+  return DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]
+}
+
+const flattenedData = computed(() => {
+  const result = []
+  if (!store.disciplinaryBlindSpots) return result
+  const minThreshold = hideOutliers.value ? 20 : 1
+
+  store.disciplinaryBlindSpots.forEach(dom => {
+    const parentDomain = dom.name || 'Unknown'
+    if (granularity.value === 'fields') {
+      if (dom.fields) {
+        dom.fields.forEach(fld => {
+          if (fld.totalCitations >= minThreshold && fld.medianLag !== null && !isNaN(fld.medianLag)) {
+            result.push({
+              ...fld,
+              parentDomain
+            })
+          }
+        })
+      }
+    } else {
+      if (dom.fields) {
+        dom.fields.forEach(fld => {
+          if (fld.subfields) {
+            fld.subfields.forEach(sub => {
+              if (sub.totalCitations >= minThreshold && sub.medianLag !== null && !isNaN(sub.medianLag)) {
+                result.push({
+                  ...sub,
+                  parentDomain,
+                  parentField: fld.name
+                })
+              }
+            })
+          }
+        })
+      }
+    }
+  })
+  return result
+})
+
+const onToggleOutliers = () => {
+  nextTick(updateChart)
+}
+
+const getYVal = (item) => {
+  if (yMetric.value === 'translator') {
+    return Number(item.realizedShare.toFixed(1))
+  } else {
+    return Number((100 - item.rejectionRate).toFixed(1))
+  }
+}
+
+const setTab = (tab) => {
+  activeTab.value = tab
+  if (tab === 'quadrants') {
+    nextTick(() => {
+      updateChart()
+      setTimeout(resizeCharts, 80)
+    })
+  } else if (tab === 'absent') {
+    fetchCanonicalTaxonomy()
+    nextTick(() => {
+      updateHorizonChart()
+      setTimeout(resizeCharts, 80)
+    })
+  }
+}
+
+const setGranularity = (g) => {
+  granularity.value = g
+  nextTick(updateChart)
+}
+
+const setYMetric = (m) => {
+  yMetric.value = m
+  nextTick(updateChart)
+}
+
+const setAbsentGranularity = (g) => {
+  absentGranularity.value = g
+  nextTick(() => {
+    updateHorizonChart()
+  })
+}
+
+const applyAbsentFilter = (item) => {
+  store.setTaxonomyFilter(item.level, item.name, item.pathString)
+  close()
+}
+
+// --- Fetcher: Canonical OpenAlex Taxonomy (Cached) ---
+const fetchCanonicalTaxonomy = async () => {
+  if (canonicalTaxonomyCache) {
+    canonicalTaxonomy.value = canonicalTaxonomyCache
+    return
+  }
+  if (canonicalTaxonomyLoadingPromise) {
+    isTaxonomyLoading.value = true
+    try {
+      await canonicalTaxonomyLoadingPromise
+      canonicalTaxonomy.value = canonicalTaxonomyCache
+    } catch (e) {
+      taxonomyError.value = e.message || 'Failed to fetch OpenAlex catalog'
+    } finally {
+      isTaxonomyLoading.value = false
+    }
+    return
+  }
+
+  isTaxonomyLoading.value = true
+  taxonomyError.value = null
+
+  canonicalTaxonomyLoadingPromise = (async () => {
+    const headers = {
+      Accept: 'application/json',
+      ...(import.meta.env?.VITE_OPENALEX_API_KEY ? { Authorization: `Bearer ${import.meta.env.VITE_OPENALEX_API_KEY}` } : {})
+    }
+
+    const [fieldsRes, subfieldsRes1, subfieldsRes2] = await Promise.all([
+      fetch('https://api.openalex.org/fields?per-page=50&select=id,display_name,domain&mailto=alexander@efremov-systems.de', { headers }),
+      fetch('https://api.openalex.org/subfields?per-page=200&page=1&select=id,display_name,field,domain&mailto=alexander@efremov-systems.de', { headers }),
+      fetch('https://api.openalex.org/subfields?per-page=200&page=2&select=id,display_name,field,domain&mailto=alexander@efremov-systems.de', { headers })
+    ])
+
+    if (!fieldsRes.ok || !subfieldsRes1.ok || !subfieldsRes2.ok) {
+      const errStatus = !fieldsRes.ok ? fieldsRes.status : (!subfieldsRes1.ok ? subfieldsRes1.status : subfieldsRes2.status)
+      throw new Error(`OpenAlex API HTTP ${errStatus}`)
+    }
+
+    const [fieldsData, sub1Data, sub2Data] = await Promise.all([
+      fieldsRes.json(),
+      subfieldsRes1.json(),
+      subfieldsRes2.json()
+    ])
+
+    const fields = (fieldsData.results || []).map(f => ({
+      id: f.id,
+      name: f.display_name,
+      domain: f.domain?.display_name || 'Unknown'
+    }))
+
+    const subfields = [
+      ...(sub1Data.results || []),
+      ...(sub2Data.results || [])
+    ].map(sf => ({
+      id: sf.id,
+      name: sf.display_name,
+      field: sf.field?.display_name || 'Other',
+      domain: sf.domain?.display_name || 'Unknown'
+    }))
+
+    canonicalTaxonomyCache = { fields, subfields }
+    return canonicalTaxonomyCache
+  })()
+
+  try {
+    await canonicalTaxonomyLoadingPromise
+    canonicalTaxonomy.value = canonicalTaxonomyCache
+  } catch (err) {
+    console.error('Failed to load canonical OpenAlex catalog:', err)
+    taxonomyError.value = err.message || 'Failed to fetch OpenAlex catalog'
+    canonicalTaxonomyLoadingPromise = null
+  } finally {
+    isTaxonomyLoading.value = false
+  }
+}
+
+// --- Benchmark: INCOSE Corpus vs Canonical Taxonomy ---
+const auditedDisciplinesLookup = computed(() => {
+  const fieldMap = new Map()
+  const subfieldMap = new Map()
+
+  if (!store.disciplinaryBlindSpots) return { fieldMap, subfieldMap }
+
+  store.disciplinaryBlindSpots.forEach(dom => {
+    const domName = dom.name || 'Unknown'
+    if (dom.fields) {
+      dom.fields.forEach(fld => {
+        const fldKey = (fld.name || '').trim().toLowerCase()
+        if (fldKey) {
+          fieldMap.set(fldKey, {
+            name: fld.name,
+            totalCitations: fld.totalCitations || 0,
+            pathString: fld.pathString || `${domName} > ${fld.name}`,
+            level: 'field',
+            domain: domName
+          })
+        }
+        if (fld.subfields) {
+          fld.subfields.forEach(sub => {
+            const subKey = (sub.name || '').trim().toLowerCase()
+            if (subKey) {
+              subfieldMap.set(subKey, {
+                name: sub.name,
+                totalCitations: sub.totalCitations || 0,
+                pathString: sub.pathString || `${domName} > ${fld.name} > ${sub.name}`,
+                level: 'subfield',
+                domain: domName,
+                field: fld.name
+              })
+            }
+          })
+        }
+      })
+    }
+  })
+
+  return { fieldMap, subfieldMap }
+})
+
+const DOMAIN_CANONICAL_ORDER = ['Physical Sciences', 'Social Sciences', 'Life Sciences', 'Health Sciences']
+
+const absentAnalysis = computed(() => {
+  if (!canonicalTaxonomy.value) {
+    return {
+      totalCanonical: 0,
+      zeroCount: 0,
+      zeroPct: '0.0',
+      marginalCount: 0,
+      marginalPct: '0.0',
+      activeCount: 0,
+      activePct: '0.0',
+      domainGroups: []
+    }
+  }
+
+  const isSubfields = absentGranularity.value === 'subfields'
+  const rawCatalog = isSubfields 
+    ? canonicalTaxonomy.value.subfields 
+    : canonicalTaxonomy.value.fields
+  const lookupMap = isSubfields 
+    ? auditedDisciplinesLookup.value.subfieldMap 
+    : auditedDisciplinesLookup.value.fieldMap
+
+  const classified = rawCatalog.map(item => {
+    const key = (item.name || '').trim().toLowerCase()
+    const cited = lookupMap.get(key)
+    const totalCitations = cited ? cited.totalCitations : 0
+    const pathString = cited 
+      ? cited.pathString 
+      : (item.field ? `${item.domain} > ${item.field} > ${item.name}` : `${item.domain} > ${item.name}`)
+
+    let bucket = 'zero'
+    if (totalCitations >= 20) bucket = 'active'
+    else if (totalCitations >= 1) bucket = 'marginal'
+
+    return {
+      ...item,
+      level: isSubfields ? 'subfield' : 'field',
+      totalCitations,
+      pathString,
+      bucket
+    }
+  })
+
+  const totalCanonical = classified.length
+  const zeroCount = classified.filter(i => i.bucket === 'zero').length
+  const marginalCount = classified.filter(i => i.bucket === 'marginal').length
+  const activeCount = classified.filter(i => i.bucket === 'active').length
+
+  const zeroPct = totalCanonical > 0 ? ((zeroCount / totalCanonical) * 100).toFixed(1) : '0.0'
+  const marginalPct = totalCanonical > 0 ? ((marginalCount / totalCanonical) * 100).toFixed(1) : '0.0'
+  const activePct = totalCanonical > 0 ? ((activeCount / totalCanonical) * 100).toFixed(1) : '0.0'
+
+  const domainGroups = DOMAIN_CANONICAL_ORDER.map(domainName => {
+    const domainItems = classified.filter(i => i.domain === domainName)
+    const zeroItems = domainItems.filter(i => i.bucket === 'zero').sort((a, b) => a.name.localeCompare(b.name))
+    const marginalItems = domainItems.filter(i => i.bucket === 'marginal').sort((a, b) => b.totalCitations - a.totalCitations)
+    const activeItems = domainItems.filter(i => i.bucket === 'active').sort((a, b) => b.totalCitations - a.totalCitations)
+
+    const dTotal = domainItems.length
+    const dZero = zeroItems.length
+    const dMarginal = marginalItems.length
+    const dActive = activeItems.length
+
+    return {
+      domainName,
+      total: dTotal,
+      zeroItems,
+      marginalItems,
+      activeItems,
+      zeroCount: dZero,
+      marginalCount: dMarginal,
+      activeCount: dActive,
+      zeroPct: dTotal > 0 ? Number(((dZero / dTotal) * 100).toFixed(1)) : 0,
+      marginalPct: dTotal > 0 ? Number(((dMarginal / dTotal) * 100).toFixed(1)) : 0,
+      activePct: dTotal > 0 ? Number(((dActive / dTotal) * 100).toFixed(1)) : 0
+    }
+  })
+
+  return {
+    totalCanonical,
+    zeroCount,
+    zeroPct,
+    marginalCount,
+    marginalPct,
+    activeCount,
+    activePct,
+    domainGroups
+  }
+})
+
+const handleChartClick = (params) => {
+  const raw = params.data?.rawItem
+  if (raw) {
+    store.setTaxonomyFilter(raw.level, raw.name, raw.pathString)
+    close()
+  }
+}
+
+const updateChart = () => {
+  if (!chartCanvasRef.value) return
+  if (!chartInstance) {
+    chartInstance = echarts.init(chartCanvasRef.value)
+    chartInstance.on('click', handleChartClick)
+  }
+
+  const items = flattenedData.value
+  if (!items || items.length === 0) {
+    chartInstance.clear()
+    chartInstance.setOption({
+      title: {
+        text: 'No disciplines matching current threshold (min 20 citations)',
+        left: 'center',
+        top: 'middle',
+        textStyle: { color: '#888', fontSize: 13, fontWeight: 'normal' }
+      }
+    })
+    return
+  }
+
+  // Calculate overall medians across plotted points
+  const allX = items.map(i => i.medianLag).sort((a, b) => a - b)
+  const allY = items.map(i => getYVal(i)).sort((a, b) => a - b)
+
+  const medX = allX.length % 2 === 1 
+    ? allX[Math.floor(allX.length / 2)] 
+    : (allX[allX.length / 2 - 1] + allX[allX.length / 2]) / 2
+
+  const medY = allY.length % 2 === 1 
+    ? allY[Math.floor(allY.length / 2)] 
+    : (allY[allY.length / 2 - 1] + allY[allY.length / 2]) / 2
+
+  // Group items by Parent Domain
+  const domainGroups = new Map()
+  items.forEach(item => {
+    const d = item.parentDomain || 'Unknown'
+    if (!domainGroups.has(d)) domainGroups.set(d, [])
+    domainGroups.get(d).push(item)
+  })
+
+  // Identify top 10 items by citations for clean prominent labeling
+  const top10Keys = new Set(
+    [...items]
+      .sort((a, b) => b.totalCitations - a.totalCitations)
+      .slice(0, 10)
+      .map(i => i.pathString)
+  )
+
+  const sortedDomainNames = Array.from(domainGroups.keys()).sort()
+
+  const series = sortedDomainNames.map((domainName, idx) => {
+    const groupItems = domainGroups.get(domainName)
+    const color = getDomainColor(domainName, idx)
+
+    const seriesObj = {
+      name: domainName,
+      type: 'scatter',
+      itemStyle: {
+        color: color,
+        opacity: 0.82,
+        borderColor: '#ffffff',
+        borderWidth: 0.6
+      },
+      emphasis: {
+        itemStyle: {
+          opacity: 1,
+          borderColor: '#00bfff',
+          borderWidth: 2,
+          shadowBlur: 10,
+          shadowColor: 'rgba(0, 191, 255, 0.5)'
+        }
+      },
+      label: {
+        show: true,
+        position: 'top',
+        distance: 5,
+        color: '#ddd',
+        fontSize: 10,
+        textBorderColor: 'rgba(0, 0, 0, 0.85)',
+        textBorderWidth: 2,
+        formatter: (p) => {
+          const raw = p.data?.rawItem
+          if (!raw || !raw.isProminent) return ''
+          const name = raw.name || ''
+          return name.length > 18 ? name.substring(0, 16) + '…' : name
+        }
+      },
+      symbolSize: (val) => {
+        const citations = val[2] || 1
+        const size = Math.round(Math.sqrt(citations) * 1.8) + 6
+        return Math.max(8, Math.min(48, size))
+      },
+      data: groupItems.map(item => {
+        const isProminent = top10Keys.has(item.pathString) || (item.medianLag !== null && item.medianLag >= 15)
+        return {
+          name: item.name,
+          value: [
+            Number(item.medianLag.toFixed(1)),
+            getYVal(item),
+            item.totalCitations
+          ],
+          rawItem: { ...item, isProminent }
+        }
+      })
+    }
+
+    // Attach markLine crosshairs to first series
+    if (idx === 0) {
+      seriesObj.markLine = {
+        silent: true,
+        animation: false,
+        lineStyle: {
+          type: 'dashed',
+          color: 'rgba(255, 255, 255, 0.45)',
+          width: 1.5
+        },
+        data: [
+          {
+            xAxis: Number(medX.toFixed(1)),
+            label: {
+              show: true,
+              formatter: `Median Lag: ${medX.toFixed(1)} yrs`,
+              position: 'insideEndTop',
+              distance: [0, 4],
+              color: '#bbb',
+              fontSize: 10,
+              backgroundColor: 'rgba(15, 15, 25, 0.8)',
+              padding: [2, 4],
+              borderRadius: 2
+            }
+          },
+          {
+            yAxis: Number(medY.toFixed(1)),
+            label: {
+              show: true,
+              formatter: `Median: ${medY.toFixed(1)}%`,
+              position: 'insideEndTop',
+              distance: [0, 4],
+              color: '#bbb',
+              fontSize: 10,
+              backgroundColor: 'rgba(15, 15, 25, 0.8)',
+              padding: [2, 4],
+              borderRadius: 2
+            }
+          }
+        ]
+      }
+    }
+
+    return seriesObj
+  })
+
+  const subTL = yMetric.value === 'translator' ? '(Low Lag, High Translator %)' : '(Low Lag, High Assimilation)'
+  const subTR = yMetric.value === 'translator' ? '(High Lag, High Translator %)' : '(High Lag, High Assimilation)'
+  const subBL = yMetric.value === 'translator' ? '(Low Lag, Low Translator %)' : '(Low Lag, High Rejection)'
+  const subBR = yMetric.value === 'translator' ? '(High Lag, Low Translator %)' : '(High Lag, High Rejection)'
+
+  const option = {
+    backgroundColor: 'transparent',
+    grid: {
+      left: 56,
+      right: 32,
+      top: 48,
+      bottom: 48,
+      containLabel: true
+    },
+    legend: {
+      show: true,
+      top: 8,
+      textStyle: { color: '#ccc', fontSize: 11 },
+      itemWidth: 10,
+      itemHeight: 10
+    },
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(15, 15, 25, 0.95)',
+      borderColor: '#00bfff',
+      borderWidth: 1,
+      padding: [10, 14],
+      textStyle: { color: '#eee', fontSize: 11 },
+      formatter: (params) => {
+        const raw = params.data?.rawItem
+        if (!raw) return ''
+        const assimilationRate = (100 - raw.rejectionRate).toFixed(1)
+        return `
+          <div style="font-weight: bold; color: #00bfff; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px;">
+            ${raw.name} <span style="font-size: 10px; color: #aaa; font-weight: normal;">(${raw.level})</span>
+          </div>
+          <div style="display: grid; grid-template-columns: auto auto; gap: 3px 14px; font-size: 11px;">
+            <span style="color: #888;">Parent Domain:</span><span style="color: #fff; font-weight: 500;">${raw.parentDomain || 'Unknown'}</span>
+            <span style="color: #888;">Total Citations:</span><span style="color: #fff; font-weight: 500;">${raw.totalCitations.toLocaleString()}</span>
+            <span style="color: #888;">Unique Works:</span><span style="color: #fff; font-weight: 500;">${raw.uniqueWorks.toLocaleString()}</span>
+            <span style="color: #888;">Median Epistemic Lag:</span><span style="color: #ffaa00; font-weight: 500;">${raw.medianLag !== null ? raw.medianLag.toFixed(1) + ' yrs' : 'N/A'}</span>
+            <span style="color: #888;">Irritation Rejection:</span><span style="color: ${raw.rejectionRate > 85 ? '#ff6b6b' : '#5cb85c'}; font-weight: 500;">${raw.rejectionRate.toFixed(1)}%</span>
+            <span style="color: #888;">Translator-Backed:</span><span style="color: #5cb85c; font-weight: 500;">${raw.realizedShare.toFixed(1)}%</span>
+            <span style="color: #888;">Assimilation Rate:</span><span style="color: #5cb85c; font-weight: 500;">${assimilationRate}%</span>
+          </div>
+          <div style="margin-top: 6px; font-size: 9.5px; color: #00bfff; font-style: italic;">
+            Click bubble to filter 3D dashboard to this ${raw.level}
+          </div>
+        `
+      }
+    },
+    xAxis: {
+      type: 'value',
+      name: 'Median Epistemic Lag (Years)',
+      nameLocation: 'middle',
+      nameGap: 30,
+      nameTextStyle: { color: '#888', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
+      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } },
+      axisLabel: { color: '#aaa', formatter: '{value} yrs' }
+    },
+    yAxis: {
+      type: 'value',
+      name: yMetric.value === 'translator' ? 'Translator-Backed Share (%)' : 'Assimilation Rate (%)',
+      nameLocation: 'middle',
+      nameGap: 40,
+      nameTextStyle: { color: '#888', fontSize: 11 },
+      min: 0,
+      max: (val) => Math.min(100, Math.max(20, Math.ceil((val.max + 6) / 10) * 10)),
+      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
+      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } },
+      axisLabel: { color: '#aaa', formatter: '{value}%' }
+    },
+    graphic: [
+      {
+        type: 'text',
+        left: 68,
+        top: 56,
+        style: {
+          text: `LIVE STRUCTURAL COUPLING\n${subTL}`,
+          fill: 'rgba(92, 184, 92, 0.4)',
+          font: 'bold 9.5px sans-serif'
+        },
+        silent: true
+      },
+      {
+        type: 'text',
+        right: 40,
+        top: 56,
+        style: {
+          text: `FROZEN CLASSICS\n${subTR}`,
+          fill: 'rgba(0, 191, 255, 0.4)',
+          font: 'bold 9.5px sans-serif',
+          textAlign: 'right'
+        },
+        silent: true
+      },
+      {
+        type: 'text',
+        left: 68,
+        bottom: 58,
+        style: {
+          text: `TRANSIENT HYPE\n${subBL}`,
+          fill: 'rgba(240, 173, 78, 0.4)',
+          font: 'bold 9.5px sans-serif'
+        },
+        silent: true
+      },
+      {
+        type: 'text',
+        right: 40,
+        bottom: 58,
+        style: {
+          text: `EPISTEMIC BLIND SPOTS\n${subBR}`,
+          fill: 'rgba(217, 83, 79, 0.45)',
+          font: 'bold 9.5px sans-serif',
+          textAlign: 'right'
+        },
+        silent: true
+      }
+    ],
+    series
+  }
+
+  chartInstance.setOption(option, true)
+}
+
+const updateHorizonChart = () => {
+  if (!horizonChartRef.value) return
+  if (!horizonChartInstance) {
+    horizonChartInstance = echarts.init(horizonChartRef.value)
+  }
+
+  const analysis = absentAnalysis.value
+  if (!analysis || analysis.totalCanonical === 0) {
+    horizonChartInstance.clear()
+    return
+  }
+
+  // Y-axis category runs bottom-to-top, so reverse DOMAIN_CANONICAL_ORDER so 'Physical Sciences' is at top
+  const yDomains = ['Health Sciences', 'Life Sciences', 'Social Sciences', 'Physical Sciences']
+
+  const domainStatsMap = new Map()
+  analysis.domainGroups.forEach(dg => {
+    domainStatsMap.set(dg.domainName, dg)
+  })
+
+  const activePcts = []
+  const marginalPcts = []
+  const zeroPcts = []
+
+  yDomains.forEach(dName => {
+    const dg = domainStatsMap.get(dName)
+    if (dg) {
+      activePcts.push(dg.activePct)
+      marginalPcts.push(dg.marginalPct)
+      zeroPcts.push(dg.zeroPct)
+    } else {
+      activePcts.push(0)
+      marginalPcts.push(0)
+      zeroPcts.push(0)
+    }
+  })
+
+  const option = {
+    backgroundColor: 'transparent',
+    grid: {
+      left: 110,
+      right: 30,
+      top: 32,
+      bottom: 24,
+      containLabel: true
+    },
+    legend: {
+      show: true,
+      top: 2,
+      textStyle: { color: '#ccc', fontSize: 10.5 },
+      itemWidth: 10,
+      itemHeight: 10
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      backgroundColor: 'rgba(15, 15, 25, 0.95)',
+      borderColor: '#00bfff',
+      borderWidth: 1,
+      padding: [8, 12],
+      textStyle: { color: '#eee', fontSize: 11 },
+      formatter: (params) => {
+        if (!params || params.length === 0) return ''
+        const domName = params[0].name
+        const dg = domainStatsMap.get(domName)
+        if (!dg) return ''
+        return `
+          <div style="font-weight: bold; color: #00bfff; font-size: 12px; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 3px;">
+            ${domName} (${dg.total} ${absentGranularity.value})
+          </div>
+          <div style="display: grid; grid-template-columns: auto auto; gap: 2px 14px; font-size: 10.5px;">
+            <span style="color: #5cb85c;">● Active (≥20 refs):</span><span><b>${dg.activeCount}</b> (${dg.activePct}%)</span>
+            <span style="color: #f0ad4e;">● Marginal (1–19 refs):</span><span><b>${dg.marginalCount}</b> (${dg.marginalPct}%)</span>
+            <span style="color: #ff6b6b;">● Blind Spot (0 refs):</span><span><b>${dg.zeroCount}</b> (${dg.zeroPct}%)</span>
+          </div>
+        `
+      }
+    },
+    xAxis: {
+      type: 'value',
+      min: 0,
+      max: 100,
+      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
+      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.06)' } },
+      axisLabel: { color: '#888', formatter: '{value}%', fontSize: 9.5 }
+    },
+    yAxis: {
+      type: 'category',
+      data: yDomains,
+      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
+      axisLabel: { color: '#ddd', fontSize: 11 }
+    },
+    series: [
+      {
+        name: 'Active (≥20 refs)',
+        type: 'bar',
+        stack: 'total',
+        color: '#5cb85c',
+        label: {
+          show: true,
+          position: 'inside',
+          formatter: (p) => p.value >= 8 ? `${p.value.toFixed(0)}%` : '',
+          color: '#fff',
+          fontSize: 9.5,
+          fontWeight: 'bold'
+        },
+        data: activePcts
+      },
+      {
+        name: 'Marginal (1–19 refs)',
+        type: 'bar',
+        stack: 'total',
+        color: '#f0ad4e',
+        label: {
+          show: true,
+          position: 'inside',
+          formatter: (p) => p.value >= 8 ? `${p.value.toFixed(0)}%` : '',
+          color: '#222',
+          fontSize: 9.5,
+          fontWeight: 'bold'
+        },
+        data: marginalPcts
+      },
+      {
+        name: 'Absolute Blind Spot (0 refs)',
+        type: 'bar',
+        stack: 'total',
+        color: 'rgba(217, 83, 79, 0.55)',
+        label: {
+          show: true,
+          position: 'inside',
+          formatter: (p) => p.value >= 8 ? `${p.value.toFixed(0)}%` : '',
+          color: '#fff',
+          fontSize: 9.5,
+          fontWeight: 'bold'
+        },
+        data: zeroPcts
+      }
+    ]
+  }
+
+  horizonChartInstance.setOption(option, true)
+}
+
+const resizeCharts = () => {
+  if (chartInstance) chartInstance.resize()
+  if (horizonChartInstance) horizonChartInstance.resize()
+}
+
+const disposeCharts = () => {
+  if (chartInstance) {
+    chartInstance.dispose()
+    chartInstance = null
+  }
+  if (horizonChartInstance) {
+    horizonChartInstance.dispose()
+    horizonChartInstance = null
+  }
+}
+
+const onWindowResize = () => {
+  if (store.isBlindSpotsOpen) {
+    resizeCharts()
+  }
+}
+
+watch(() => store.isBlindSpotsOpen, (isOpen) => {
+  if (isOpen) {
+    if (activeTab.value === 'quadrants') {
+      nextTick(() => {
+        updateChart()
+        setTimeout(resizeCharts, 80)
+      })
+    } else if (activeTab.value === 'absent') {
+      fetchCanonicalTaxonomy()
+      nextTick(() => {
+        updateHorizonChart()
+        setTimeout(resizeCharts, 80)
+      })
+    }
+  } else {
+    disposeCharts()
+  }
+})
+
+watch(() => store.disciplinaryBlindSpots, () => {
+  if (store.isBlindSpotsOpen) {
+    if (activeTab.value === 'quadrants') {
+      nextTick(() => {
+        updateChart()
+        resizeCharts()
+      })
+    } else if (activeTab.value === 'absent') {
+      nextTick(() => {
+        updateHorizonChart()
+        resizeCharts()
+      })
+    }
+  }
+})
+
+watch(canonicalTaxonomy, () => {
+  if (store.isBlindSpotsOpen && activeTab.value === 'absent') {
+    nextTick(() => {
+      updateHorizonChart()
+      resizeCharts()
+    })
+  }
+})
+
+onMounted(() => {
+  window.addEventListener('resize', onWindowResize)
+  if (store.isBlindSpotsOpen) {
+    if (activeTab.value === 'quadrants') {
+      nextTick(updateChart)
+    } else if (activeTab.value === 'absent') {
+      fetchCanonicalTaxonomy()
+      nextTick(updateHorizonChart)
+    }
+  }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWindowResize)
+  disposeCharts()
+})
 </script>
 
 
@@ -344,6 +1445,7 @@ const overallLagStats = computed(() => {
   max-height: 88vh;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   box-shadow: 0 0 35px rgba(0, 191, 255, 0.25);
   backdrop-filter: blur(10px);
   color: #eee;
@@ -800,5 +1902,405 @@ const overallLagStats = computed(() => {
 .footer-close-btn:hover {
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
+}
+
+/* Tab Bar */
+.view-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  margin-bottom: 2px;
+}
+
+.tab-btn {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #aaa;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.tab-btn:hover {
+  background: rgba(0, 191, 255, 0.15);
+  color: #fff;
+}
+
+.tab-btn.active {
+  background: rgba(0, 191, 255, 0.22);
+  border-color: #00bfff;
+  color: #00bfff;
+}
+
+/* 2x2 Quadrants Tab */
+.quadrants-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 12px;
+}
+
+.quadrant-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.control-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.control-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: #bbb;
+  cursor: pointer;
+  user-select: none;
+}
+
+.control-checkbox input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: #00bfff;
+}
+
+.ctrl-btn {
+  padding: 4px 9px;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #aaa;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.ctrl-btn:hover {
+  background: rgba(0, 191, 255, 0.15);
+  color: #fff;
+}
+
+.ctrl-btn.active {
+  background: rgba(0, 191, 255, 0.25);
+  border-color: #00bfff;
+  color: #00bfff;
+  font-weight: 600;
+}
+
+.quadrant-stat-pill {
+  font-size: 10px;
+  color: #888;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.quadrant-stat-pill b {
+  color: #00bfff;
+}
+
+.quadrant-chart-canvas {
+  height: 520px;
+  width: 100%;
+  min-height: 520px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+/* --- 🕳 Absent Blind Spots Tab Styles --- */
+.absent-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 12px;
+  gap: 10px;
+}
+
+.absent-loading-state,
+.absent-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #bbb;
+  font-size: 12px;
+  gap: 12px;
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(0, 191, 255, 0.2);
+  border-top-color: #00bfff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.retry-btn {
+  padding: 5px 12px;
+  background: rgba(0, 191, 255, 0.2);
+  border: 1px solid #00bfff;
+  color: #00bfff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.retry-btn:hover {
+  background: #00bfff;
+  color: #050510;
+}
+
+/* 4 KPI Ribbon */
+.absent-kpi-ribbon {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.kpi-box {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kpi-box.kpi-danger {
+  border-color: rgba(217, 83, 79, 0.35);
+  background: rgba(217, 83, 79, 0.07);
+}
+.kpi-box.kpi-warning {
+  border-color: rgba(240, 173, 78, 0.35);
+  background: rgba(240, 173, 78, 0.07);
+}
+.kpi-box.kpi-success {
+  border-color: rgba(92, 184, 92, 0.35);
+  background: rgba(92, 184, 92, 0.07);
+}
+
+.kpi-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  color: #888;
+  letter-spacing: 0.4px;
+}
+
+.kpi-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #eee;
+}
+.kpi-pct {
+  font-size: 10.5px;
+  font-weight: normal;
+  opacity: 0.85;
+}
+
+.absent-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 12px;
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+
+.absent-meta-note {
+  font-size: 9.5px;
+  color: #777;
+  font-style: italic;
+}
+
+/* Horizontal Stacked Bar Chart Card */
+.horizon-chart-card {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.chart-header-sub {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #aaa;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.horizon-chart-canvas {
+  height: 210px;
+  width: 100%;
+}
+
+/* Tag Lists */
+.absent-tags-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 270px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.absent-tags-container::-webkit-scrollbar {
+  width: 4px;
+}
+.absent-tags-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.absent-section {
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.absent-section.section-zero {
+  border-left: 3px solid #d9534f;
+}
+.absent-section.section-marginal {
+  border-left: 3px solid #f0ad4e;
+}
+
+.absent-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.absent-section-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.title-danger {
+  color: #ff6b6b;
+}
+.title-warning {
+  color: #f0ad4e;
+}
+
+.section-count-badge {
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.section-desc {
+  font-size: 9.5px;
+  color: #777;
+  margin: 2px 0 8px 0;
+}
+
+.domain-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.domain-tag-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.domain-group-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.absent-tag {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.tag-zero {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #888;
+}
+
+.tag-marginal {
+  background: rgba(240, 173, 78, 0.12);
+  border: 1px solid rgba(240, 173, 78, 0.35);
+  color: #f0ad4e;
+}
+
+.tag-clickable {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tag-clickable:hover {
+  background: rgba(240, 173, 78, 0.3);
+  border-color: #f0ad4e;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.tag-cnt {
+  font-size: 8.5px;
+  opacity: 0.85;
 }
 </style>
