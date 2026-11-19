@@ -69,6 +69,14 @@
           👁 Blind Spots Matrix
         </button>
         <button 
+          class="preset-btn longitudinal-btn" 
+          :class="{ active: store.isLongitudinalOpen }"
+          @click="store.isLongitudinalOpen = true"
+          title="Opens 30-Year Longitudinal Trends: Operational Closure, Price Index, Epistemic Lag, and Shannon Diversity."
+        >
+          📈 30Y Trends
+        </button>
+        <button 
           class="preset-btn reset-btn" 
           @click="store.applyUseCasePreset('reset')"
           title="Reset all advanced filters, slices, and presets"
@@ -88,6 +96,7 @@
     <MetricsPanel />
     <NodeInfoModal /> <!-- Внедряем меню поверх графа -->
     <BlindSpotsModal />
+    <LongitudinalModal />
     
     <div id="empty-state" v-if="!store.focusedNodeId && !store.isLoaded">
       Upload JSON and select a node from the right panel to build its cluster (Radius = 1).
@@ -103,6 +112,7 @@ import EgoPanel from '../components/panels/EgoPanel.vue'
 import MetricsPanel from '../components/panels/MetricsPanel.vue'
 import NodeInfoModal from '../components/modals/NodeInfoModal.vue'
 import BlindSpotsModal from '../components/modals/BlindSpotsModal.vue'
+import LongitudinalModal from '../components/modals/LongitudinalModal.vue'
 
 const store = useGraphStore()
 
@@ -261,6 +271,14 @@ const resetSlice = () => {
   border-color: #ffaa00;
   color: #ffaa00;
   box-shadow: 0 0 8px rgba(255, 170, 0, 0.3);
+}
+
+.preset-btn.longitudinal-btn:hover,
+.preset-btn.longitudinal-btn.active {
+  background: rgba(192, 132, 252, 0.2);
+  border-color: #c084fc;
+  color: #c084fc;
+  box-shadow: 0 0 8px rgba(192, 132, 252, 0.3);
 }
 
 .preset-btn.reset-btn:hover {

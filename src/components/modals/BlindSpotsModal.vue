@@ -9,6 +9,9 @@
         <div class="title-with-badge">
           <h2>Epistemic Blind Spots &amp; Disciplinary Asymmetry Audit</h2>
           <span class="luhmann-badge">Disciplinary Audit</span>
+          <span class="journal-scope-badge" v-if="store.longitudinalScopeSummary" :title="store.longitudinalScopeSummary.selectedJournalLabels.join(', ')">
+            📖 {{ store.longitudinalScopeSummary.selectedJournalLabels.join(', ') }}
+          </span>
         </div>
         <p class="modal-subtitle">
           Macroscopic audit quantifying which external disciplines INCOSE ignores, rejects, or assimilates with epistemic lag.<br />
@@ -34,9 +37,12 @@
           </span>
         </div>
         <div class="ribbon-metric">
-          <span class="r-label">Mean Epistemic Lag</span>
-          <span class="r-val" :class="{ 'val-warning': overallAvgLag > 15 }">
-            {{ overallAvgLag.toFixed(1) }} yrs
+          <span class="r-label">Median Epistemic Lag</span>
+          <span class="r-val" :class="{ 'val-warning': overallLagStats.median !== null && overallLagStats.median > 15 }">
+            {{ overallLagStats.median !== null ? overallLagStats.median.toFixed(1) + ' yrs' : 'N/A' }}
+          </span>
+          <span class="r-sub" v-if="overallLagStats.median !== null && overallLagStats.q1 !== null && overallLagStats.q3 !== null && overallLagStats.mean !== null">
+            IQR: {{ overallLagStats.q1.toFixed(0) }}–{{ overallLagStats.q3.toFixed(0) }} | μ: {{ overallLagStats.mean.toFixed(1) }} yrs
           </span>
         </div>
       </div>
@@ -71,10 +77,10 @@
                 <span class="sort-icon" v-if="sortKey === 'realizedShare'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
                 <span class="help-icon" @click.stop title="Share of citations to this discipline made by verified 'True Translators' (INCOSE papers with both external references AND independent internal citations from other INCOSE authors). Measures realized structural coupling vs. unresonated scout noise.">?</span>
               </th>
-              <th class="th-num" @click="setSort('avgLag')">
-                Epistemic Lag (Avg Age)
-                <span class="sort-icon" v-if="sortKey === 'avgLag'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
-                <span class="help-icon" @click.stop title="Luhmann's Temporal Asynchrony (Eigenzeit): Average age of external literature when cited (Core_Year − External_Year). Low lag (3–7 yrs) = active coupling with contemporary science; High lag (>15 yrs) = reliance on historical classics while missing modern advances.">?</span>
+              <th class="th-num" @click="setSort('medianLag')">
+                Epistemic Lag (Median / IQR)
+                <span class="sort-icon" v-if="sortKey === 'medianLag' || sortKey === 'avgLag'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
+                <span class="help-icon" @click.stop title="Luhmann's Temporal Asynchrony (Eigenzeit): Median and Interquartile Range (IQR: Q1–Q3) of citation age (Core_Year − External_Year), reported alongside mean (μ). Statistically robust against right-skewed citation distributions.">?</span>
               </th>
             </tr>
           </thead>
@@ -109,9 +115,14 @@
                   </span>
                 </td>
                 <td class="td-num">
-                  <span class="badge" :class="dom.avgLag !== null && dom.avgLag > 15 ? 'badge-warning' : 'badge-neutral'">
-                    {{ dom.avgLag !== null ? dom.avgLag.toFixed(1) + ' yrs' : '—' }}
-                  </span>
+                  <div class="lag-cell">
+                    <span class="badge" :class="dom.medianLag !== null && dom.medianLag > 15 ? 'badge-warning' : 'badge-neutral'">
+                      {{ dom.medianLag !== null ? dom.medianLag.toFixed(1) + ' yrs' : '—' }}
+                    </span>
+                    <span class="lag-sub-meta" v-if="dom.medianLag !== null && dom.lagQ1 !== null && dom.lagQ3 !== null && dom.avgLag !== null">
+                      IQR: {{ dom.lagQ1.toFixed(0) }}–{{ dom.lagQ3.toFixed(0) }} | μ: {{ dom.avgLag.toFixed(1) }}
+                    </span>
+                  </div>
                 </td>
               </tr>
 
@@ -146,9 +157,14 @@
                       </span>
                     </td>
                     <td class="td-num">
-                      <span class="badge" :class="fld.avgLag !== null && fld.avgLag > 15 ? 'badge-warning' : 'badge-neutral'">
-                        {{ fld.avgLag !== null ? fld.avgLag.toFixed(1) + ' yrs' : '—' }}
-                      </span>
+                      <div class="lag-cell">
+                        <span class="badge" :class="fld.medianLag !== null && fld.medianLag > 15 ? 'badge-warning' : 'badge-neutral'">
+                          {{ fld.medianLag !== null ? fld.medianLag.toFixed(1) + ' yrs' : '—' }}
+                        </span>
+                        <span class="lag-sub-meta" v-if="fld.medianLag !== null && fld.lagQ1 !== null && fld.lagQ3 !== null && fld.avgLag !== null">
+                          IQR: {{ fld.lagQ1.toFixed(0) }}–{{ fld.lagQ3.toFixed(0) }} | μ: {{ fld.avgLag.toFixed(1) }}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                   <!-- SUBFIELDS (LEVEL 3) -->
@@ -175,9 +191,14 @@
                         </span>
                       </td>
                       <td class="td-num">
-                        <span class="badge" :class="sub.avgLag !== null && sub.avgLag > 15 ? 'badge-warning' : 'badge-neutral'">
-                          {{ sub.avgLag !== null ? sub.avgLag.toFixed(1) + ' yrs' : '—' }}
-                        </span>
+                        <div class="lag-cell">
+                          <span class="badge" :class="sub.medianLag !== null && sub.medianLag > 15 ? 'badge-warning' : 'badge-neutral'">
+                            {{ sub.medianLag !== null ? sub.medianLag.toFixed(1) + ' yrs' : '—' }}
+                          </span>
+                          <span class="lag-sub-meta" v-if="sub.medianLag !== null && sub.lagQ1 !== null && sub.lagQ3 !== null && sub.avgLag !== null">
+                            IQR: {{ sub.lagQ1.toFixed(0) }}–{{ sub.lagQ3.toFixed(0) }} | μ: {{ sub.avgLag.toFixed(1) }}
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   </template>
@@ -203,7 +224,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { useGraphStore } from '../../store/graphStore.js'
+import { useGraphStore, computeLagStats } from '../../store/graphStore.js'
 
 const store = useGraphStore()
 
@@ -284,12 +305,14 @@ const overallRejectionRate = computed(() => {
   return totalUnique > 0 ? (totalOneOff / totalUnique) * 100 : 0
 })
 
-const overallAvgLag = computed(() => {
-  const valid = store.disciplinaryBlindSpots.filter(r => r.totalCitations > 0 && r.avgLag !== null)
-  if (valid.length === 0) return 0
-  const sum = valid.reduce((acc, r) => acc + r.avgLag * r.totalCitations, 0)
-  const totalCit = valid.reduce((acc, r) => acc + r.totalCitations, 0)
-  return totalCit > 0 ? sum / totalCit : 0
+const overallLagStats = computed(() => {
+  const allLags = []
+  store.disciplinaryBlindSpots.forEach(dom => {
+    if (dom.lags && dom.lags.length > 0) {
+      allLags.push(...dom.lags)
+    }
+  })
+  return computeLagStats(allLags)
 })
 </script>
 
@@ -369,6 +392,19 @@ const overallAvgLag = computed(() => {
   color: #00bfff;
   text-transform: uppercase;
 }
+.journal-scope-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(92, 184, 92, 0.15);
+  border: 1px solid rgba(92, 184, 92, 0.4);
+  color: #5cb85c;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 
 .modal-subtitle {
   font-size: 11px;
@@ -417,6 +453,13 @@ const overallAvgLag = computed(() => {
   font-size: 14px;
   font-weight: 700;
   color: #eee;
+}
+
+.r-sub {
+  font-size: 9.5px;
+  color: #888;
+  font-family: monospace;
+  margin-top: 2px;
 }
 
 .val-danger {
@@ -664,6 +707,20 @@ const overallAvgLag = computed(() => {
 .td-num {
   padding: 8px 12px;
   text-align: right;
+  white-space: nowrap;
+}
+
+.lag-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.lag-sub-meta {
+  font-size: 8.5px;
+  color: #888;
+  font-family: monospace;
   white-space: nowrap;
 }
 

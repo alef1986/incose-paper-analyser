@@ -21,6 +21,49 @@ function getAuthorSet(authorsStr) {
   )
 }
 
+export function computeLagStats(lags) {
+  if (!lags || lags.length === 0) return { mean: null, median: null, q1: null, q3: null, iqr: null }
+  const sorted = [...lags].sort((a, b) => a - b)
+  const n = sorted.length
+  const mean = sorted.reduce((acc, v) => acc + v, 0) / n
+  const quantile = (q) => {
+    const pos = (n - 1) * q
+    const base = Math.floor(pos)
+    const rest = pos - base
+    return sorted[base + 1] !== undefined
+      ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+      : sorted[base]
+  }
+  const q1 = quantile(0.25)
+  const median = quantile(0.5)
+  const q3 = quantile(0.75)
+  return { mean, median, q1, q3, iqr: q3 - q1 }
+}
+export function passesIssnFilter(node, trackedIssns, selectedISSNs) {
+  if (!node) return false
+  const nodeIssns = node.issns || []
+  const hasTracked = nodeIssns.some(i => trackedIssns.includes(i))
+  if (!hasTracked) return true
+  return nodeIssns.some(i => selectedISSNs.includes(i))
+}
+
+export function matchesTaxonomy(node, taxonomy) {
+  if (!node || !taxonomy) return true
+  const { pathString, level, name } = taxonomy
+  if (pathString) {
+    const parts = pathString.split(' > ')
+    const matchDomain = !parts[0] || node.domain === parts[0]
+    const matchField = !parts[1] || node.field === parts[1]
+    const matchSubfield = !parts[2] || node.subfield === parts[2]
+    return matchDomain && matchField && matchSubfield
+  }
+  if (level && name) {
+    return node[level] === name
+  }
+  return true
+}
+
+
 export const useGraphStore = defineStore('graph', {
   state: () => ({
     activeFilters: {
@@ -29,6 +72,7 @@ export const useGraphStore = defineStore('graph', {
     },
     translatorLensActive: false,
     isBlindSpotsOpen: false,
+    isLongitudinalOpen: false,
     activePreset: null, // 'bridges' | 'classics' | 'frontier' | 'blindspots' | null
 
     graphModel: null,
@@ -1150,8 +1194,7 @@ export const useGraphStore = defineStore('graph', {
         totalCitations: 0,
         nodeIds: new Set(),
         translatorBackedCitations: 0,
-        sumLag: 0,
-        lagCount: 0
+        lags: []
       });
 
       state.graphModel.links.forEach(l => {
@@ -1162,6 +1205,8 @@ export const useGraphStore = defineStore('graph', {
 
         if (!sNode || !tNode) return;
         if (sNode.type !== 'incose_source') return;
+        if (!passesIssnFilter(sNode, state.trackedIssns, state.selectedISSNs)) return;
+        if (state.metrics?.isCitationFilterActive && state.activeNodeIds && (!state.activeNodeIds.has(sId) || !state.activeNodeIds.has(tId))) return;
         if (tNode.type === 'incose_source' || tNode.type === 'irrelevant') return;
 
         const domain = tNode.domain ? tNode.domain.trim() : null;
@@ -1179,8 +1224,8 @@ export const useGraphStore = defineStore('graph', {
         const tYearRaw = tNode.year || tNode.publicationYear;
         const sYear = sYearRaw ? parseInt(sYearRaw, 10) : null;
         const tYear = tYearRaw ? parseInt(tYearRaw, 10) : null;
-        const hasLag = sYear && tYear && !isNaN(sYear) && !isNaN(tYear) && sYear >= 1900 && tYear >= 1800;
-        const lag = hasLag ? (sYear - tYear) : null;
+        const isValidLag = sYear !== null && tYear !== null && !isNaN(sYear) && !isNaN(tYear) && sYear >= tYear && (sYear - tYear) <= 150;
+        const lag = isValidLag ? (sYear - tYear) : null;
 
         if (!domainMap.has(domain)) {
           domainMap.set(domain, {
@@ -1207,9 +1252,8 @@ export const useGraphStore = defineStore('graph', {
           b.totalCitations++;
           b.nodeIds.add(tId);
           if (isTranslator) b.translatorBackedCitations++;
-          if (hasLag) {
-            b.sumLag += lag;
-            b.lagCount++;
+          if (lag !== null) {
+            b.lags.push(lag);
           }
         };
 
@@ -1228,7 +1272,7 @@ export const useGraphStore = defineStore('graph', {
         }
         const rejectionRate = uniqueWorks > 0 ? (oneOffWorks / uniqueWorks) * 100 : 0;
         const realizedShare = bucket.totalCitations > 0 ? (bucket.translatorBackedCitations / bucket.totalCitations) * 100 : 0;
-        const avgLag = bucket.lagCount > 0 ? (bucket.sumLag / bucket.lagCount) : null;
+        const stats = computeLagStats(bucket.lags);
 
         return {
           level,
@@ -1240,7 +1284,12 @@ export const useGraphStore = defineStore('graph', {
           rejectionRate,
           translatorBackedCitations: bucket.translatorBackedCitations,
           realizedShare,
-          avgLag
+          avgLag: stats.mean,
+          medianLag: stats.median,
+          lagQ1: stats.q1,
+          lagQ3: stats.q3,
+          lagIqr: stats.iqr,
+          lags: bucket.lags
         };
       };
 
@@ -1270,6 +1319,176 @@ export const useGraphStore = defineStore('graph', {
 
       result.sort((a, b) => b.totalCitations - a.totalCitations);
       return result;
+    }
+,
+    longitudinalMetrics(state) {
+      if (!state.graphModel || !state.graphModel.links) return [];
+
+      const isFilterActive = state.metrics?.isCitationFilterActive && state.activeNodeIds && state.activeNodeIds.size > 0;
+      const activeIds = state.activeNodeIds;
+      const taxonomy = state.activeFilters.taxonomy;
+
+      // When taxonomy filter is active, restrict to Core papers engaging with that discipline
+      let relevantCoreIds = null;
+      if (taxonomy) {
+        relevantCoreIds = new Set();
+        state.graphModel.links.forEach(l => {
+          const sId = typeof l.source === 'object' ? l.source.id : l.source;
+          const tId = typeof l.target === 'object' ? l.target.id : l.target;
+          const sNode = state.graphModel.nodes.get(sId);
+          const tNode = state.graphModel.nodes.get(tId);
+          if (!sNode || !tNode) return;
+          if (sNode.type !== 'incose_source') return;
+          if (!passesIssnFilter(sNode, state.trackedIssns, state.selectedISSNs)) return;
+          if (isFilterActive && (!activeIds.has(sId) || !activeIds.has(tId))) return;
+          if (tNode.type !== 'incose_source' && tNode.type !== 'irrelevant') {
+            if (matchesTaxonomy(tNode, taxonomy)) {
+              relevantCoreIds.add(sId);
+            }
+          }
+        });
+      }
+
+      const isSubfieldGranularity = taxonomy && (taxonomy.level === 'field' || taxonomy.level === 'subfield' || (taxonomy.pathString && taxonomy.pathString.includes(' > ')));
+      const yearlyBuckets = new Map();
+
+      state.graphModel.links.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+        const sNode = state.graphModel.nodes.get(sId);
+        const tNode = state.graphModel.nodes.get(tId);
+
+        if (!sNode || !tNode) return;
+        if (sNode.type !== 'incose_source') return;
+        if (!passesIssnFilter(sNode, state.trackedIssns, state.selectedISSNs)) return;
+        if (isFilterActive && (!activeIds.has(sId) || !activeIds.has(tId))) return;
+        if (relevantCoreIds !== null && !relevantCoreIds.has(sId)) return;
+
+        const sYearRaw = sNode.year || sNode.publicationYear;
+        const sYear = sYearRaw ? parseInt(sYearRaw, 10) : null;
+        if (!sYear || isNaN(sYear) || sYear < 1990 || sYear > 2030) return;
+
+        if (!yearlyBuckets.has(sYear)) {
+          yearlyBuckets.set(sYear, {
+            corePapers: new Set(),
+            coreToCoreLinks: 0,
+            coreToEnvLinks: 0,
+            envLags: [],
+            recentEnvLinks: 0,
+            fieldCounts: new Map()
+          });
+        }
+
+        const bucket = yearlyBuckets.get(sYear);
+        bucket.corePapers.add(sId);
+
+        if (tNode.type === 'incose_source') {
+          bucket.coreToCoreLinks++;
+        } else if (tNode.type !== 'irrelevant') {
+          if (taxonomy && !matchesTaxonomy(tNode, taxonomy)) return;
+
+          bucket.coreToEnvLinks++;
+          const tYearRaw = tNode.year || tNode.publicationYear;
+          const tYear = tYearRaw ? parseInt(tYearRaw, 10) : null;
+          if (tYear && !isNaN(tYear)) {
+            const lag = sYear - tYear;
+            if (lag >= 0 && lag <= 150) {
+              bucket.envLags.push(lag);
+              if (lag <= 5) {
+                bucket.recentEnvLinks++;
+              }
+            }
+          }
+
+          let catKey = null;
+          if (isSubfieldGranularity) {
+            const sf = tNode.subfield ? tNode.subfield.trim() : null;
+            if (sf && sf !== 'Unknown') catKey = sf;
+          } else {
+            const f = tNode.field ? tNode.field.trim() : null;
+            if (f && f !== 'Unknown') catKey = f;
+          }
+          if (catKey) {
+            bucket.fieldCounts.set(catKey, (bucket.fieldCounts.get(catKey) || 0) + 1);
+          }
+        }
+      });
+
+      const sortedYears = Array.from(yearlyBuckets.keys()).sort((a, b) => a - b);
+      const results = [];
+
+      for (const year of sortedYears) {
+        const b = yearlyBuckets.get(year);
+        const totalOut = b.coreToCoreLinks + b.coreToEnvLinks;
+        if (totalOut === 0) continue;
+
+        const lagStats = computeLagStats(b.envLags);
+        const closureRate = (b.coreToCoreLinks / totalOut) * 100;
+        const priceIndex = b.envLags.length > 0 ? (b.recentEnvLinks / b.envLags.length) * 100 : null;
+
+        let totalFields = 0;
+        for (const cnt of b.fieldCounts.values()) {
+          totalFields += cnt;
+        }
+        let shannonDiversity = 0;
+        if (totalFields > 0) {
+          for (const cnt of b.fieldCounts.values()) {
+            const p = cnt / totalFields;
+            if (p > 0) {
+              shannonDiversity -= p * Math.log(p);
+            }
+          }
+        }
+
+        results.push({
+          year,
+          paperCount: b.corePapers.size,
+          closureRate,
+          priceIndex,
+          medianLag: lagStats.median,
+          meanLag: lagStats.mean,
+          shannonDiversity,
+          totalOut,
+          coreToCoreLinks: b.coreToCoreLinks,
+          coreToEnvLinks: b.coreToEnvLinks
+        });
+      }
+
+      return results;
+    }
+,
+    longitudinalScopeSummary(state) {
+      if (!state.graphModel) {
+        return {
+          totalMatchingCore: 0,
+          selectedJournalLabels: ['All Journals'],
+          taxonomyLabel: 'All External Domains'
+        };
+      }
+      const isFilterActive = state.metrics?.isCitationFilterActive && state.activeNodeIds && state.activeNodeIds.size > 0;
+      let totalMatchingCore = 0;
+      state.graphModel.nodes.forEach(n => {
+        if (n.type !== 'incose_source') return;
+        if (!passesIssnFilter(n, state.trackedIssns, state.selectedISSNs)) return;
+        if (isFilterActive && !state.activeNodeIds.has(n.id)) return;
+        totalMatchingCore++;
+      });
+
+      const isAllSelected = state.trackedIssns.length > 0 && 
+        state.trackedIssns.every(i => state.selectedISSNs.includes(i));
+      const selectedJournalLabels = isAllSelected 
+        ? ['All Journals'] 
+        : Array.from(new Set(state.selectedISSNs.map(i => issnMap[i] || i)));
+
+      const taxonomyLabel = state.activeFilters.taxonomy 
+        ? (state.activeFilters.taxonomy.pathString || state.activeFilters.taxonomy.name) 
+        : 'All External Domains';
+
+      return {
+        totalMatchingCore,
+        selectedJournalLabels: selectedJournalLabels.length > 0 ? selectedJournalLabels : ['No Journals Selected'],
+        taxonomyLabel
+      };
     }
   }
 })

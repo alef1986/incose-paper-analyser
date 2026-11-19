@@ -22,13 +22,13 @@
           <div class="metric-box">
             <span class="m-label">
               Epistemic Lag
-              <span class="help-icon" title="Luhmann's Temporal Asynchrony (Eigenzeit): Measures how old external knowledge is when imported by INCOSE. Formula: Average(Year_Core_Paper - Year_Cited_Env_Paper) across all links to the selected environment. Low lag (3-6 yrs) = active structural coupling with contemporary science; High lag (>15 yrs) = reliance on historical classics while ignoring modern advances.">?</span>
+              <span class="help-icon" title="Luhmann's Temporal Asynchrony (Eigenzeit): Measures how old external knowledge is when imported by INCOSE (Year_Core_Paper - Year_Cited_Env_Paper). Median and Interquartile Range (IQR: Q1–Q3) are reported alongside Mean to provide a statistically robust metric against right-skewed citation distributions (resistant to historical outliers). Low lag (3-6 yrs) = active coupling with contemporary science; High lag (>15 yrs) = reliance on historical canon.">?</span>
             </span>
             <span class="m-value lag-value">
-              {{ epistemicLag !== null ? epistemicLag.toFixed(1) + ' yrs' : 'N/A' }}
+              {{ medianLag !== null ? medianLag.toFixed(1) + ' yrs' : 'N/A' }}
             </span>
-            <span class="m-sub" v-if="epistemicLag !== null">
-              Avg. Citation Age: {{ epistemicLag.toFixed(1) }} yrs
+            <span class="m-sub" v-if="medianLag !== null && lagQ1 !== null && lagQ3 !== null && meanLag !== null">
+              IQR: {{ lagQ1.toFixed(1) }}–{{ lagQ3.toFixed(1) }} | Mean: {{ meanLag.toFixed(1) }} yrs
             </span>
           </div>
         </div>
@@ -141,7 +141,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useGraphStore } from '../../store/graphStore.js'
+import { useGraphStore, computeLagStats } from '../../store/graphStore.js'
 
 const store = useGraphStore()
 const isDiffusionOpen = ref(true)
@@ -241,25 +241,23 @@ const validEnvNodeIds = computed(() => {
 // Epistemic Lag & Boundary Spanners Calculation
 const diffusionMetrics = computed(() => {
   if (!store.graphModel || !isUnlocked.value) {
-    return { epistemicLag: null, candidateSpanners: [] }
+    return { medianLag: null, meanLag: null, lagQ1: null, lagQ3: null, candidateSpanners: [] }
   }
 
   const envIds = validEnvNodeIds.value
   if (envIds.size === 0) {
-    return { epistemicLag: null, candidateSpanners: [] }
+    return { medianLag: null, meanLag: null, lagQ1: null, lagQ3: null, candidateSpanners: [] }
   }
 
   const coreNodes = store.filteredCoreNodes
   if (!coreNodes || coreNodes.length === 0) {
-    return { epistemicLag: null, candidateSpanners: [] }
+    return { medianLag: null, meanLag: null, lagQ1: null, lagQ3: null, candidateSpanners: [] }
   }
 
   const coreNodeMap = new Map(coreNodes.map(n => [n.id, n]))
   const envCitationCounts = new Map()
   const spannerDomainCounts = new Map()
-
-  let totalLag = 0
-  let lagCount = 0
+  const lags = []
 
   store.graphModel.links.forEach(l => {
     const sId = typeof l.source === 'object' ? l.source.id : l.source
@@ -279,9 +277,8 @@ const diffusionMetrics = computed(() => {
         const sYear = sYearRaw ? parseInt(sYearRaw, 10) : NaN
         const tYear = tYearRaw ? parseInt(tYearRaw, 10) : NaN
 
-        if (!isNaN(sYear) && !isNaN(tYear)) {
-          totalLag += (sYear - tYear)
-          lagCount++
+        if (!isNaN(sYear) && !isNaN(tYear) && sYear >= tYear && (sYear - tYear) <= 150) {
+          lags.push(sYear - tYear)
         }
       }
 
@@ -311,7 +308,7 @@ const diffusionMetrics = computed(() => {
     }
   })
 
-  const epistemicLag = lagCount > 0 ? (totalLag / lagCount) : null
+  const lagStats = computeLagStats(lags)
 
   // Build candidate translator papers
   const candidates = []
@@ -348,12 +345,18 @@ const diffusionMetrics = computed(() => {
   })
 
   return {
-    epistemicLag,
+    medianLag: lagStats.median,
+    meanLag: lagStats.mean,
+    lagQ1: lagStats.q1,
+    lagQ3: lagStats.q3,
     candidateSpanners: candidates
   }
 })
 
-const epistemicLag = computed(() => diffusionMetrics.value.epistemicLag)
+const medianLag = computed(() => diffusionMetrics.value.medianLag)
+const meanLag = computed(() => diffusionMetrics.value.meanLag)
+const lagQ1 = computed(() => diffusionMetrics.value.lagQ1)
+const lagQ3 = computed(() => diffusionMetrics.value.lagQ3)
 
 // Dynamic sorting for Boundary Spanners (top 5)
 const boundarySpanners = computed(() => {
