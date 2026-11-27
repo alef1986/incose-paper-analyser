@@ -45,6 +45,30 @@
           >
             🕳 Absolute Blind Spots
           </button>
+
+          <div class="tabs-right-tools" v-if="activeTab === 'quadrants' || activeTab === 'absent'">
+            <button
+              type="button"
+              class="icon-tool-btn"
+              :class="{ active: isPaperMode }"
+              @click="togglePaperMode"
+              :title="isPaperMode ? 'Switch to Dark UI Mode' : 'Preview Paper Mode (Light Print Theme)'"
+            >
+              {{ isPaperMode ? '🌙' : '☀️' }}
+            </button>
+            <button
+              type="button"
+              class="icon-tool-btn print-btn"
+              @click="activeTab === 'quadrants' ? exportQuadrantsForPrint() : exportHorizonForPrint()"
+              title="Save 300 DPI PNG for Print (Paper Mode, White Background)"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -298,7 +322,7 @@
         </div>
 
         <!-- Interactive ECharts Scatter Canvas -->
-        <div ref="chartCanvasRef" class="quadrant-chart-canvas"></div>
+        <div ref="chartCanvasRef" class="quadrant-chart-canvas" :class="{ 'is-paper-mode': isPaperMode }"></div>
       </div>
 
       <!-- 🕳 Tab 3: Absolute Blind Spots (0 & <20 Refs) -->
@@ -375,7 +399,7 @@
           </div>
 
           <!-- 2. ECharts 100% Horizontal Stacked Bar Chart -->
-          <div class="horizon-chart-card">
+          <div class="horizon-chart-card" :class="{ 'is-paper-mode': isPaperMode }">
             <div class="chart-header-sub">
               <span>Epistemic Horizon Coverage by Domain (100% Stacked)</span>
             </div>
@@ -479,6 +503,11 @@ let canonicalTaxonomyLoadingPromise = null
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { useGraphStore, computeLagStats } from '../../store/graphStore.js'
+import {
+  PRINT_DOMAIN_COLORS,
+  PRINT_DEFAULT_PALETTE,
+  exportEChartForPrint
+} from '../../utils/chartPrintExport.js'
 
 const store = useGraphStore()
 
@@ -486,6 +515,7 @@ const activeTab = ref('table') // 'table' | 'quadrants' | 'absent'
 const granularity = ref('fields') // 'fields' | 'subfields'
 const yMetric = ref('translator') // 'translator' | 'assimilation'
 const hideOutliers = ref(true) // Hide tiny outliers (< 20 citations)
+const isPaperMode = ref(false)
 const chartCanvasRef = ref(null)
 let chartInstance = null
 
@@ -537,6 +567,20 @@ const close = () => {
   if (store.activePreset === 'blindspots') {
     store.activePreset = null
   }
+}
+
+const togglePaperMode = () => {
+  isPaperMode.value = !isPaperMode.value
+  nextTick(() => {
+    if (activeTab.value === 'quadrants') updateChart()
+    else if (activeTab.value === 'absent') updateHorizonChart()
+  })
+}
+
+const getActiveScopeSubtitle = () => {
+  const journals = store.longitudinalScopeSummary?.selectedJournalLabels?.join(', ') || 'All Journals'
+  const lens = store.translatorLensActive ? ' | Translator Lens ON' : ''
+  return `Scope: ${journals}${lens}`
 }
 
 const sortList = (items, key, order) => {
@@ -595,7 +639,11 @@ const DOMAIN_COLOR_MAP = {
 }
 const DEFAULT_PALETTE = ['#00bfff', '#5cb85c', '#f0ad4e', '#d9534f', '#9b59b6', '#3498db', '#1abc9c', '#e67e22', '#e74c3c']
 
-const getDomainColor = (domainName, idx) => {
+const getDomainColor = (domainName, idx = 0, paperMode = false) => {
+  if (paperMode) {
+    if (PRINT_DOMAIN_COLORS[domainName]) return PRINT_DOMAIN_COLORS[domainName]
+    return PRINT_DEFAULT_PALETTE[idx % PRINT_DEFAULT_PALETTE.length]
+  }
   if (DOMAIN_COLOR_MAP[domainName]) return DOMAIN_COLOR_MAP[domainName]
   return DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]
 }
@@ -909,28 +957,10 @@ const handleChartClick = (params) => {
   }
 }
 
-const updateChart = () => {
-  if (!chartCanvasRef.value) return
-  if (!chartInstance) {
-    chartInstance = echarts.init(chartCanvasRef.value)
-    chartInstance.on('click', handleChartClick)
-  }
-
+const buildQuadrantsOption = (paperMode = false) => {
   const items = flattenedData.value
-  if (!items || items.length === 0) {
-    chartInstance.clear()
-    chartInstance.setOption({
-      title: {
-        text: 'No disciplines matching current threshold (min 20 citations)',
-        left: 'center',
-        top: 'middle',
-        textStyle: { color: '#888', fontSize: 13, fontWeight: 'normal' }
-      }
-    })
-    return
-  }
+  if (!items || items.length === 0) return null
 
-  // Calculate overall medians across plotted points
   const allX = items.map(i => i.medianLag).sort((a, b) => a - b)
   const allY = items.map(i => getYVal(i)).sort((a, b) => a - b)
 
@@ -942,7 +972,6 @@ const updateChart = () => {
     ? allY[Math.floor(allY.length / 2)] 
     : (allY[allY.length / 2 - 1] + allY[allY.length / 2]) / 2
 
-  // Group items by Parent Domain
   const domainGroups = new Map()
   items.forEach(item => {
     const d = item.parentDomain || 'Unknown'
@@ -950,7 +979,6 @@ const updateChart = () => {
     domainGroups.get(d).push(item)
   })
 
-  // Identify top 10 items by citations for clean prominent labeling
   const top10Keys = new Set(
     [...items]
       .sort((a, b) => b.totalCitations - a.totalCitations)
@@ -960,36 +988,47 @@ const updateChart = () => {
 
   const sortedDomainNames = Array.from(domainGroups.keys()).sort()
 
+  const axisLineColor = paperMode ? '#334155' : 'rgba(255, 255, 255, 0.2)'
+  const splitLineColor = paperMode ? '#e2e8f0' : 'rgba(255, 255, 255, 0.05)'
+  const axisLabelColor = paperMode ? '#1e293b' : '#aaa'
+  const axisNameColor = paperMode ? '#0f172a' : '#888'
+  const legendTextColor = paperMode ? '#1e293b' : '#ccc'
+  const markLineColor = paperMode ? '#475569' : 'rgba(255, 255, 255, 0.45)'
+  const markLabelColor = paperMode ? '#0f172a' : '#bbb'
+  const markLabelBg = paperMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 15, 25, 0.8)'
+  const markLabelBorder = paperMode ? '#cbd5e1' : 'transparent'
+
   const series = sortedDomainNames.map((domainName, idx) => {
     const groupItems = domainGroups.get(domainName)
-    const color = getDomainColor(domainName, idx)
+    const color = getDomainColor(domainName, idx, paperMode)
 
     const seriesObj = {
       name: domainName,
       type: 'scatter',
       itemStyle: {
         color: color,
-        opacity: 0.82,
-        borderColor: '#ffffff',
-        borderWidth: 0.6
+        opacity: paperMode ? 0.85 : 0.82,
+        borderColor: paperMode ? '#1e293b' : '#ffffff',
+        borderWidth: paperMode ? 0.8 : 0.6
       },
       emphasis: {
         itemStyle: {
           opacity: 1,
-          borderColor: '#00bfff',
+          borderColor: paperMode ? '#0f172a' : '#00bfff',
           borderWidth: 2,
           shadowBlur: 10,
-          shadowColor: 'rgba(0, 191, 255, 0.5)'
+          shadowColor: paperMode ? 'rgba(15, 23, 42, 0.25)' : 'rgba(0, 191, 255, 0.5)'
         }
       },
       label: {
         show: true,
         position: 'top',
         distance: 5,
-        color: '#ddd',
-        fontSize: 10,
-        textBorderColor: 'rgba(0, 0, 0, 0.85)',
-        textBorderWidth: 2,
+        color: paperMode ? '#111827' : '#ddd',
+        fontSize: paperMode ? 10.5 : 10,
+        fontWeight: paperMode ? 500 : 'normal',
+        textBorderColor: paperMode ? '#ffffff' : 'rgba(0, 0, 0, 0.85)',
+        textBorderWidth: paperMode ? 3 : 2,
         formatter: (p) => {
           const raw = p.data?.rawItem
           if (!raw || !raw.isProminent) return ''
@@ -1016,14 +1055,13 @@ const updateChart = () => {
       })
     }
 
-    // Attach markLine crosshairs to first series
     if (idx === 0) {
       seriesObj.markLine = {
         silent: true,
         animation: false,
         lineStyle: {
           type: 'dashed',
-          color: 'rgba(255, 255, 255, 0.45)',
+          color: markLineColor,
           width: 1.5
         },
         data: [
@@ -1034,10 +1072,12 @@ const updateChart = () => {
               formatter: `Median Lag: ${medX.toFixed(1)} yrs`,
               position: 'insideEndTop',
               distance: [0, 4],
-              color: '#bbb',
+              color: markLabelColor,
               fontSize: 10,
-              backgroundColor: 'rgba(15, 15, 25, 0.8)',
-              padding: [2, 4],
+              backgroundColor: markLabelBg,
+              borderColor: markLabelBorder,
+              borderWidth: paperMode ? 1 : 0,
+              padding: [2, 5],
               borderRadius: 2
             }
           },
@@ -1048,10 +1088,12 @@ const updateChart = () => {
               formatter: `Median: ${medY.toFixed(1)}%`,
               position: 'insideEndTop',
               distance: [0, 4],
-              color: '#bbb',
+              color: markLabelColor,
               fontSize: 10,
-              backgroundColor: 'rgba(15, 15, 25, 0.8)',
-              padding: [2, 4],
+              backgroundColor: markLabelBg,
+              borderColor: markLabelBorder,
+              borderWidth: paperMode ? 1 : 0,
+              padding: [2, 5],
               borderRadius: 2
             }
           }
@@ -1067,47 +1109,50 @@ const updateChart = () => {
   const subBL = yMetric.value === 'translator' ? '(Low Lag, Low Translator %)' : '(Low Lag, High Rejection)'
   const subBR = yMetric.value === 'translator' ? '(High Lag, Low Translator %)' : '(High Lag, High Rejection)'
 
-  const option = {
-    backgroundColor: 'transparent',
+  return {
+    backgroundColor: paperMode ? '#ffffff' : 'transparent',
     grid: {
-      left: 56,
-      right: 32,
+      left: 60,
+      right: 36,
       top: 48,
-      bottom: 48,
+      bottom: 52,
       containLabel: true
     },
     legend: {
       show: true,
       top: 8,
-      textStyle: { color: '#ccc', fontSize: 11 },
+      textStyle: { color: legendTextColor, fontSize: 11 },
       itemWidth: 10,
       itemHeight: 10
     },
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'rgba(15, 15, 25, 0.95)',
-      borderColor: '#00bfff',
+      backgroundColor: paperMode ? 'rgba(255, 255, 255, 0.96)' : 'rgba(15, 15, 25, 0.95)',
+      borderColor: paperMode ? '#0284c7' : '#00bfff',
       borderWidth: 1,
       padding: [10, 14],
-      textStyle: { color: '#eee', fontSize: 11 },
+      textStyle: { color: paperMode ? '#111827' : '#eee', fontSize: 11 },
       formatter: (params) => {
         const raw = params.data?.rawItem
         if (!raw) return ''
         const assimilationRate = (100 - raw.rejectionRate).toFixed(1)
+        const titleClr = paperMode ? '#0284c7' : '#00bfff'
+        const lblClr = paperMode ? '#475569' : '#888'
+        const valClr = paperMode ? '#0f172a' : '#fff'
         return `
-          <div style="font-weight: bold; color: #00bfff; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px;">
-            ${raw.name} <span style="font-size: 10px; color: #aaa; font-weight: normal;">(${raw.level})</span>
+          <div style="font-weight: bold; color: ${titleClr}; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 4px;">
+            ${raw.name} <span style="font-size: 10px; color: ${lblClr}; font-weight: normal;">(${raw.level})</span>
           </div>
           <div style="display: grid; grid-template-columns: auto auto; gap: 3px 14px; font-size: 11px;">
-            <span style="color: #888;">Parent Domain:</span><span style="color: #fff; font-weight: 500;">${raw.parentDomain || 'Unknown'}</span>
-            <span style="color: #888;">Total Citations:</span><span style="color: #fff; font-weight: 500;">${raw.totalCitations.toLocaleString()}</span>
-            <span style="color: #888;">Unique Works:</span><span style="color: #fff; font-weight: 500;">${raw.uniqueWorks.toLocaleString()}</span>
-            <span style="color: #888;">Median Epistemic Lag:</span><span style="color: #ffaa00; font-weight: 500;">${raw.medianLag !== null ? raw.medianLag.toFixed(1) + ' yrs' : 'N/A'}</span>
-            <span style="color: #888;">Irritation Rejection:</span><span style="color: ${raw.rejectionRate > 85 ? '#ff6b6b' : '#5cb85c'}; font-weight: 500;">${raw.rejectionRate.toFixed(1)}%</span>
-            <span style="color: #888;">Translator-Backed:</span><span style="color: #5cb85c; font-weight: 500;">${raw.realizedShare.toFixed(1)}%</span>
-            <span style="color: #888;">Assimilation Rate:</span><span style="color: #5cb85c; font-weight: 500;">${assimilationRate}%</span>
+            <span style="color: ${lblClr};">Parent Domain:</span><span style="color: ${valClr}; font-weight: 500;">${raw.parentDomain || 'Unknown'}</span>
+            <span style="color: ${lblClr};">Total Citations:</span><span style="color: ${valClr}; font-weight: 500;">${raw.totalCitations.toLocaleString()}</span>
+            <span style="color: ${lblClr};">Unique Works:</span><span style="color: ${valClr}; font-weight: 500;">${raw.uniqueWorks.toLocaleString()}</span>
+            <span style="color: ${lblClr};">Median Epistemic Lag:</span><span style="color: #d97706; font-weight: 600;">${raw.medianLag !== null ? raw.medianLag.toFixed(1) + ' yrs' : 'N/A'}</span>
+            <span style="color: ${lblClr};">Irritation Rejection:</span><span style="color: ${raw.rejectionRate > 85 ? '#dc2626' : '#16a34a'}; font-weight: 600;">${raw.rejectionRate.toFixed(1)}%</span>
+            <span style="color: ${lblClr};">Translator-Backed:</span><span style="color: #16a34a; font-weight: 600;">${raw.realizedShare.toFixed(1)}%</span>
+            <span style="color: ${lblClr};">Assimilation Rate:</span><span style="color: #16a34a; font-weight: 600;">${assimilationRate}%</span>
           </div>
-          <div style="margin-top: 6px; font-size: 9.5px; color: #00bfff; font-style: italic;">
+          <div style="margin-top: 6px; font-size: 9.5px; color: ${titleClr}; font-style: italic;">
             Click bubble to filter 3D dashboard to this ${raw.level}
           </div>
         `
@@ -1117,43 +1162,45 @@ const updateChart = () => {
       type: 'value',
       name: 'Median Epistemic Lag (Years)',
       nameLocation: 'middle',
-      nameGap: 30,
-      nameTextStyle: { color: '#888', fontSize: 11 },
-      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } },
-      axisLabel: { color: '#aaa', formatter: '{value} yrs' }
+      nameGap: 32,
+      nameTextStyle: { color: axisNameColor, fontSize: 11.5, fontWeight: paperMode ? 'bold' : 'normal' },
+      axisLine: { lineStyle: { color: axisLineColor } },
+      axisTick: { lineStyle: { color: axisLineColor } },
+      splitLine: { lineStyle: { color: splitLineColor } },
+      axisLabel: { color: axisLabelColor, formatter: '{value} yrs' }
     },
     yAxis: {
       type: 'value',
       name: yMetric.value === 'translator' ? 'Translator-Backed Share (%)' : 'Assimilation Rate (%)',
       nameLocation: 'middle',
-      nameGap: 40,
-      nameTextStyle: { color: '#888', fontSize: 11 },
+      nameGap: 44,
+      nameTextStyle: { color: axisNameColor, fontSize: 11.5, fontWeight: paperMode ? 'bold' : 'normal' },
       min: 0,
       max: (val) => Math.min(100, Math.max(20, Math.ceil((val.max + 6) / 10) * 10)),
-      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } },
-      axisLabel: { color: '#aaa', formatter: '{value}%' }
+      axisLine: { lineStyle: { color: axisLineColor } },
+      axisTick: { lineStyle: { color: axisLineColor } },
+      splitLine: { lineStyle: { color: splitLineColor } },
+      axisLabel: { color: axisLabelColor, formatter: '{value}%' }
     },
     graphic: [
       {
         type: 'text',
-        left: 68,
+        left: 72,
         top: 56,
         style: {
           text: `LIVE STRUCTURAL COUPLING\n${subTL}`,
-          fill: 'rgba(92, 184, 92, 0.4)',
+          fill: paperMode ? 'rgba(22, 101, 52, 0.78)' : 'rgba(92, 184, 92, 0.4)',
           font: 'bold 9.5px sans-serif'
         },
         silent: true
       },
       {
         type: 'text',
-        right: 40,
+        right: 44,
         top: 56,
         style: {
           text: `FROZEN CLASSICS\n${subTR}`,
-          fill: 'rgba(0, 191, 255, 0.4)',
+          fill: paperMode ? 'rgba(3, 105, 161, 0.78)' : 'rgba(0, 191, 255, 0.4)',
           font: 'bold 9.5px sans-serif',
           textAlign: 'right'
         },
@@ -1161,22 +1208,22 @@ const updateChart = () => {
       },
       {
         type: 'text',
-        left: 68,
-        bottom: 58,
+        left: 72,
+        bottom: 60,
         style: {
           text: `TRANSIENT HYPE\n${subBL}`,
-          fill: 'rgba(240, 173, 78, 0.4)',
+          fill: paperMode ? 'rgba(180, 83, 9, 0.78)' : 'rgba(240, 173, 78, 0.4)',
           font: 'bold 9.5px sans-serif'
         },
         silent: true
       },
       {
         type: 'text',
-        right: 40,
-        bottom: 58,
+        right: 44,
+        bottom: 60,
         style: {
           text: `EPISTEMIC BLIND SPOTS\n${subBR}`,
-          fill: 'rgba(217, 83, 79, 0.45)',
+          fill: paperMode ? 'rgba(185, 28, 28, 0.78)' : 'rgba(217, 83, 79, 0.45)',
           font: 'bold 9.5px sans-serif',
           textAlign: 'right'
         },
@@ -1185,23 +1232,37 @@ const updateChart = () => {
     ],
     series
   }
+}
+
+const updateChart = () => {
+  if (!chartCanvasRef.value) return
+  if (!chartInstance) {
+    chartInstance = echarts.init(chartCanvasRef.value)
+    chartInstance.on('click', handleChartClick)
+  }
+
+  const option = buildQuadrantsOption(isPaperMode.value)
+  if (!option) {
+    chartInstance.clear()
+    chartInstance.setOption({
+      backgroundColor: isPaperMode.value ? '#ffffff' : 'transparent',
+      title: {
+        text: 'No disciplines matching current threshold (min 20 citations)',
+        left: 'center',
+        top: 'middle',
+        textStyle: { color: isPaperMode.value ? '#475569' : '#888', fontSize: 13, fontWeight: 'normal' }
+      }
+    })
+    return
+  }
 
   chartInstance.setOption(option, true)
 }
 
-const updateHorizonChart = () => {
-  if (!horizonChartRef.value) return
-  if (!horizonChartInstance) {
-    horizonChartInstance = echarts.init(horizonChartRef.value)
-  }
-
+const buildHorizonOption = (paperMode = false) => {
   const analysis = absentAnalysis.value
-  if (!analysis || analysis.totalCanonical === 0) {
-    horizonChartInstance.clear()
-    return
-  }
+  if (!analysis || analysis.totalCanonical === 0) return null
 
-  // Y-axis category runs bottom-to-top, so reverse DOMAIN_CANONICAL_ORDER so 'Physical Sciences' is at top
   const yDomains = ['Health Sciences', 'Life Sciences', 'Social Sciences', 'Physical Sciences']
 
   const domainStatsMap = new Map()
@@ -1226,43 +1287,50 @@ const updateHorizonChart = () => {
     }
   })
 
-  const option = {
-    backgroundColor: 'transparent',
+  const axisLineColor = paperMode ? '#334155' : 'rgba(255, 255, 255, 0.2)'
+  const splitLineColor = paperMode ? '#e2e8f0' : 'rgba(255, 255, 255, 0.06)'
+  const axisLabelColor = paperMode ? '#1e293b' : '#ddd'
+  const xAxisLabelColor = paperMode ? '#334155' : '#888'
+  const legendTextColor = paperMode ? '#1e293b' : '#ccc'
+
+  return {
+    backgroundColor: paperMode ? '#ffffff' : 'transparent',
     grid: {
-      left: 110,
-      right: 30,
-      top: 32,
-      bottom: 24,
+      left: 118,
+      right: 32,
+      top: 34,
+      bottom: 26,
       containLabel: true
     },
     legend: {
       show: true,
       top: 2,
-      textStyle: { color: '#ccc', fontSize: 10.5 },
+      textStyle: { color: legendTextColor, fontSize: 10.5 },
       itemWidth: 10,
       itemHeight: 10
     },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      backgroundColor: 'rgba(15, 15, 25, 0.95)',
-      borderColor: '#00bfff',
+      backgroundColor: paperMode ? 'rgba(255, 255, 255, 0.96)' : 'rgba(15, 15, 25, 0.95)',
+      borderColor: paperMode ? '#0284c7' : '#00bfff',
       borderWidth: 1,
       padding: [8, 12],
-      textStyle: { color: '#eee', fontSize: 11 },
+      textStyle: { color: paperMode ? '#111827' : '#eee', fontSize: 11 },
       formatter: (params) => {
         if (!params || params.length === 0) return ''
         const domName = params[0].name
         const dg = domainStatsMap.get(domName)
         if (!dg) return ''
+        const titleClr = paperMode ? '#0284c7' : '#00bfff'
         return `
-          <div style="font-weight: bold; color: #00bfff; font-size: 12px; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 3px;">
+          <div style="font-weight: bold; color: ${titleClr}; font-size: 12px; margin-bottom: 4px; border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 3px;">
             ${domName} (${dg.total} ${absentGranularity.value})
           </div>
           <div style="display: grid; grid-template-columns: auto auto; gap: 2px 14px; font-size: 10.5px;">
-            <span style="color: #5cb85c;">● Active (≥20 refs):</span><span><b>${dg.activeCount}</b> (${dg.activePct}%)</span>
-            <span style="color: #f0ad4e;">● Marginal (1–19 refs):</span><span><b>${dg.marginalCount}</b> (${dg.marginalPct}%)</span>
-            <span style="color: #ff6b6b;">● Blind Spot (0 refs):</span><span><b>${dg.zeroCount}</b> (${dg.zeroPct}%)</span>
+            <span style="color: #16a34a;">● Active (≥20 refs):</span><span><b>${dg.activeCount}</b> (${dg.activePct}%)</span>
+            <span style="color: #d97706;">● Marginal (1–19 refs):</span><span><b>${dg.marginalCount}</b> (${dg.marginalPct}%)</span>
+            <span style="color: #dc2626;">● Blind Spot (0 refs):</span><span><b>${dg.zeroCount}</b> (${dg.zeroPct}%)</span>
           </div>
         `
       }
@@ -1271,28 +1339,28 @@ const updateHorizonChart = () => {
       type: 'value',
       min: 0,
       max: 100,
-      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.06)' } },
-      axisLabel: { color: '#888', formatter: '{value}%', fontSize: 9.5 }
+      axisLine: { lineStyle: { color: axisLineColor } },
+      splitLine: { lineStyle: { color: splitLineColor } },
+      axisLabel: { color: xAxisLabelColor, formatter: '{value}%', fontSize: 10 }
     },
     yAxis: {
       type: 'category',
       data: yDomains,
-      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-      axisLabel: { color: '#ddd', fontSize: 11 }
+      axisLine: { lineStyle: { color: axisLineColor } },
+      axisLabel: { color: axisLabelColor, fontSize: 11, fontWeight: paperMode ? 600 : 'normal' }
     },
     series: [
       {
         name: 'Active (≥20 refs)',
         type: 'bar',
         stack: 'total',
-        color: '#5cb85c',
+        color: paperMode ? '#16a34a' : '#5cb85c',
         label: {
           show: true,
           position: 'inside',
           formatter: (p) => p.value >= 8 ? `${p.value.toFixed(0)}%` : '',
-          color: '#fff',
-          fontSize: 9.5,
+          color: '#ffffff',
+          fontSize: 10,
           fontWeight: 'bold'
         },
         data: activePcts
@@ -1301,13 +1369,13 @@ const updateHorizonChart = () => {
         name: 'Marginal (1–19 refs)',
         type: 'bar',
         stack: 'total',
-        color: '#f0ad4e',
+        color: paperMode ? '#d97706' : '#f0ad4e',
         label: {
           show: true,
           position: 'inside',
           formatter: (p) => p.value >= 8 ? `${p.value.toFixed(0)}%` : '',
-          color: '#222',
-          fontSize: 9.5,
+          color: paperMode ? '#ffffff' : '#222',
+          fontSize: 10,
           fontWeight: 'bold'
         },
         data: marginalPcts
@@ -1316,21 +1384,65 @@ const updateHorizonChart = () => {
         name: 'Absolute Blind Spot (0 refs)',
         type: 'bar',
         stack: 'total',
-        color: 'rgba(217, 83, 79, 0.55)',
+        color: paperMode ? '#dc2626' : 'rgba(217, 83, 79, 0.55)',
         label: {
           show: true,
           position: 'inside',
           formatter: (p) => p.value >= 8 ? `${p.value.toFixed(0)}%` : '',
-          color: '#fff',
-          fontSize: 9.5,
+          color: '#ffffff',
+          fontSize: 10,
           fontWeight: 'bold'
         },
         data: zeroPcts
       }
     ]
   }
+}
+
+const updateHorizonChart = () => {
+  if (!horizonChartRef.value) return
+  if (!horizonChartInstance) {
+    horizonChartInstance = echarts.init(horizonChartRef.value)
+  }
+
+  const option = buildHorizonOption(isPaperMode.value)
+  if (!option) {
+    horizonChartInstance.clear()
+    return
+  }
 
   horizonChartInstance.setOption(option, true)
+}
+
+const exportQuadrantsForPrint = () => {
+  const option = buildQuadrantsOption(true)
+  if (!option) return
+  const yTitle = yMetric.value === 'translator' ? 'Translator-Backed Share' : 'Assimilation Rate'
+  const granLabel = granularity.value === 'fields' ? 'Fields' : 'Subfields'
+  exportEChartForPrint({
+    option,
+    filename: `incose_irritation_quadrants_${granularity.value}_${yMetric.value}_300dpi.png`,
+    width: 1200,
+    height: 680,
+    pixelRatio: 3,
+    title: `INCOSE 2×2 Irritation Typology (${granLabel} — ${yTitle})`,
+    subtitle: `${getActiveScopeSubtitle()} | Plotted: ${flattenedData.value.length} ${granLabel}`
+  })
+}
+
+const exportHorizonForPrint = () => {
+  const option = buildHorizonOption(true)
+  if (!option) return
+  const granLabel = absentGranularity.value === 'subfields' ? 'Subfields (252)' : 'Fields (26)'
+  exportEChartForPrint({
+    option,
+    filename: `incose_epistemic_horizon_${absentGranularity.value}_300dpi.png`,
+    width: 1100,
+    height: 400,
+    pixelRatio: 3,
+    title: `INCOSE Epistemic Horizon Coverage by Domain — Canonical OpenAlex ${granLabel}`,
+    subtitle: getActiveScopeSubtitle()
+  })
 }
 
 const resizeCharts = () => {
@@ -1506,7 +1618,6 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 
 .modal-subtitle {
   font-size: 11px;
@@ -1907,9 +2018,57 @@ onBeforeUnmount(() => {
 /* Tab Bar */
 .view-tabs {
   display: flex;
+  align-items: center;
   gap: 6px;
   margin-top: 10px;
   margin-bottom: 2px;
+}
+
+.tabs-right-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  color: #ccc;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.icon-tool-btn:hover {
+  background: rgba(0, 191, 255, 0.18);
+  border-color: #00bfff;
+  color: #fff;
+}
+
+.icon-tool-btn.active {
+  background: rgba(240, 173, 78, 0.22);
+  border-color: #f0ad4e;
+  color: #f0ad4e;
+}
+
+.icon-tool-btn.print-btn {
+  border-color: rgba(92, 184, 92, 0.45);
+  color: #5cb85c;
+  background: rgba(92, 184, 92, 0.12);
+}
+
+.icon-tool-btn.print-btn:hover {
+  background: #5cb85c;
+  border-color: #5cb85c;
+  color: #050510;
 }
 
 .tab-btn {
@@ -2036,6 +2195,12 @@ onBeforeUnmount(() => {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.quadrant-chart-canvas.is-paper-mode {
+  background: #ffffff;
+  border-color: #cbd5e1;
 }
 
 /* --- 🕳 Absent Blind Spots Tab Styles --- */
@@ -2161,6 +2326,16 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   padding: 8px 12px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.horizon-chart-card.is-paper-mode {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.horizon-chart-card.is-paper-mode .chart-header-sub {
+  color: #1e293b;
 }
 
 .chart-header-sub {

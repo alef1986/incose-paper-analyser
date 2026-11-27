@@ -108,6 +108,18 @@
         >
           🌐 3. Shannon Diversity
         </button>
+
+        <div class="tabs-right-tools">
+          <button
+            type="button"
+            class="icon-tool-btn"
+            :class="{ active: isPaperMode }"
+            @click="togglePaperMode"
+            :title="isPaperMode ? 'Switch to Dark UI Mode' : 'Preview Paper Mode (Light Print Theme)'"
+          >
+            {{ isPaperMode ? '🌙' : '☀️' }}
+          </button>
+        </div>
       </div>
 
       <!-- Charts Body -->
@@ -116,7 +128,7 @@
         <div 
           class="chart-card" 
           v-show="activeTab === 'all' || activeTab === 'closure'"
-          :class="{ 'expanded-chart': activeTab === 'closure' }"
+          :class="{ 'expanded-chart': activeTab === 'closure', 'is-paper-mode': isPaperMode }"
         >
           <div class="chart-card-header">
             <div class="card-title">
@@ -130,15 +142,28 @@
             <div class="card-legend">
               <span class="legend-item"><span class="legend-color cyan"></span> Closure Rate (%)</span>
               <span class="legend-item"><span class="legend-color gray-bar"></span> Publication Volume</span>
+              <button
+                type="button"
+                class="icon-tool-btn print-btn"
+                @click="exportChartForPrint('closure')"
+                title="Save 300 DPI PNG for Print (Paper Mode, White Background)"
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                  <rect x="6" y="14" width="12" height="8"></rect>
+                </svg>
+              </button>
             </div>
           </div>
           <div ref="chartClosureRef" class="chart-canvas"></div>
         </div>
+
         <!-- CHART 2: Price Index vs Median Epistemic Lag -->
         <div 
           class="chart-card" 
           v-show="activeTab === 'all' || activeTab === 'eigenzeit'"
-          :class="{ 'expanded-chart': activeTab === 'eigenzeit' }"
+          :class="{ 'expanded-chart': activeTab === 'eigenzeit', 'is-paper-mode': isPaperMode }"
         >
           <div class="chart-card-header">
             <div class="card-title">
@@ -152,6 +177,18 @@
             <div class="card-legend">
               <span class="legend-item"><span class="legend-color green"></span> Price Index (%)</span>
               <span class="legend-item"><span class="legend-color amber"></span> Median Lag (yrs)</span>
+              <button
+                type="button"
+                class="icon-tool-btn print-btn"
+                @click="exportChartForPrint('eigenzeit')"
+                title="Save 300 DPI PNG for Print (Paper Mode, White Background)"
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                  <rect x="6" y="14" width="12" height="8"></rect>
+                </svg>
+              </button>
             </div>
           </div>
           <div ref="chartEigenzeitRef" class="chart-canvas"></div>
@@ -161,7 +198,7 @@
         <div 
           class="chart-card" 
           v-show="activeTab === 'all' || activeTab === 'diversity'"
-          :class="{ 'expanded-chart': activeTab === 'diversity' }"
+          :class="{ 'expanded-chart': activeTab === 'diversity', 'is-paper-mode': isPaperMode }"
         >
           <div class="chart-card-header">
             <div class="card-title">
@@ -174,6 +211,18 @@
             </div>
             <div class="card-legend">
               <span class="legend-item"><span class="legend-color purple"></span> Shannon Entropy H' (nats)</span>
+              <button
+                type="button"
+                class="icon-tool-btn print-btn"
+                @click="exportChartForPrint('diversity')"
+                title="Save 300 DPI PNG for Print (Paper Mode, White Background)"
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                  <rect x="6" y="14" width="12" height="8"></rect>
+                </svg>
+              </button>
             </div>
           </div>
           <div ref="chartDiversityRef" class="chart-canvas"></div>
@@ -186,7 +235,7 @@
       </div>
 
       <div class="modal-footer">
-        <span class="footer-tip">💡 Tip: Hover over data points to inspect exact yearly metrics and sample volumes.</span>
+        <span class="footer-tip">💡 Tip: Hover over data points to inspect exact yearly metrics, or click the printer icon to export a 300 DPI figure.</span>
         <button class="footer-close-btn" @click="close">Close Trends</button>
       </div>
     </div>
@@ -197,9 +246,11 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { useGraphStore } from '../../store/graphStore.js'
+import { exportEChartForPrint } from '../../utils/chartPrintExport.js'
 
 const store = useGraphStore()
 const activeTab = ref('all') // 'all' | 'closure' | 'eigenzeit' | 'diversity'
+const isPaperMode = ref(false)
 
 const chartClosureRef = ref(null)
 const chartEigenzeitRef = ref(null)
@@ -248,224 +299,333 @@ const setTab = (tab) => {
   })
 }
 
+const togglePaperMode = () => {
+  isPaperMode.value = !isPaperMode.value
+  nextTick(() => {
+    initOrUpdateCharts()
+  })
+}
+
 const close = () => {
   store.isLongitudinalOpen = false
 }
-const initOrUpdateCharts = () => {
+
+const getScopeSubtitle = () => {
+  const journals = store.longitudinalScopeSummary?.selectedJournalLabels?.join(', ') || 'All Journals'
+  const tax = store.longitudinalScopeSummary?.taxonomyLabel || 'All External Domains'
+  const lens = store.translatorLensActive ? ' | Translator Lens ON' : ''
+  return `Journals: ${journals} | Taxonomy: ${tax}${lens}`
+}
+
+const buildCommonXAxis = (years, paperMode) => ({
+  type: 'category',
+  data: years,
+  boundaryGap: false,
+  axisLine: { lineStyle: { color: paperMode ? '#334155' : 'rgba(255, 255, 255, 0.2)' } },
+  axisTick: { lineStyle: { color: paperMode ? '#334155' : 'rgba(255, 255, 255, 0.2)' } },
+  axisLabel: { color: paperMode ? '#1e293b' : '#888', fontSize: 10.5 }
+})
+
+const buildClosureOption = (paperMode = false) => {
   const data = metricsData.value
-  if (!data || data.length === 0) return
+  if (!data || data.length === 0) return null
 
   const years = data.map(d => d.year)
   const closureRates = data.map(d => Number(d.closureRate.toFixed(2)))
   const paperCounts = data.map(d => d.paperCount)
+
+  const lineColor = paperMode ? '#0284c7' : '#00bfff'
+  const barColor = paperMode ? 'rgba(100, 116, 139, 0.24)' : 'rgba(255, 255, 255, 0.09)'
+  const rightAxisColor = paperMode ? '#475569' : '#777'
+  const splitColor = paperMode ? '#e2e8f0' : 'rgba(255, 255, 255, 0.05)'
+
+  return {
+    backgroundColor: paperMode ? '#ffffff' : 'transparent',
+    legend: paperMode
+      ? {
+          show: true,
+          top: 2,
+          textStyle: { color: '#1e293b', fontSize: 11 }
+        }
+      : undefined,
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: paperMode ? 'rgba(255, 255, 255, 0.96)' : 'rgba(15, 15, 25, 0.95)',
+      borderColor: lineColor,
+      borderWidth: 1,
+      textStyle: { color: paperMode ? '#111827' : '#eee', fontSize: 11 },
+      formatter: (params) => {
+        let res = `<div style="font-weight:bold;margin-bottom:4px;color:${lineColor};">${params[0].axisValue}</div>`
+        params.forEach(p => {
+          if (p.seriesName === 'Operational Closure Rate') {
+            res += `<div>🔒 Closure Rate: <strong>${p.value !== null ? p.value + '%' : 'N/A'}</strong></div>`
+          } else if (p.seriesName === 'Core Papers') {
+            res += `<div>📄 INCOSE Papers: <strong>${p.value}</strong></div>`
+          }
+        })
+        return res
+      }
+    },
+    grid: { left: 50, right: 58, top: paperMode ? 36 : 25, bottom: 28 },
+    xAxis: { ...buildCommonXAxis(years, paperMode), boundaryGap: true },
+    yAxis: [
+      {
+        type: 'value',
+        name: '%',
+        nameTextStyle: { color: lineColor, fontSize: 10.5, fontWeight: paperMode ? 'bold' : 'normal' },
+        axisLine: { show: paperMode, lineStyle: { color: '#334155' } },
+        axisLabel: { color: lineColor, fontSize: 10.5, formatter: '{value}%' },
+        splitLine: { lineStyle: { color: splitColor } }
+      },
+      {
+        type: 'value',
+        name: 'Papers',
+        nameTextStyle: { color: rightAxisColor, fontSize: 10.5, fontWeight: paperMode ? 'bold' : 'normal' },
+        axisLine: { show: paperMode, lineStyle: { color: '#64748b' } },
+        axisLabel: { color: rightAxisColor, fontSize: 10.5 },
+        splitLine: { show: false }
+      }
+    ],
+    series: [
+      {
+        name: 'Core Papers',
+        type: 'bar',
+        yAxisIndex: 1,
+        data: paperCounts,
+        barMaxWidth: 16,
+        itemStyle: {
+          color: barColor,
+          borderRadius: [3, 3, 0, 0]
+        }
+      },
+      {
+        name: 'Operational Closure Rate',
+        type: 'line',
+        yAxisIndex: 0,
+        data: closureRates,
+        smooth: true,
+        symbolSize: 6,
+        itemStyle: { color: lineColor },
+        lineStyle: { width: 2.5, color: lineColor },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: paperMode ? 'rgba(2, 132, 199, 0.22)' : 'rgba(0, 191, 255, 0.3)' },
+            { offset: 1, color: paperMode ? 'rgba(2, 132, 199, 0.0)' : 'rgba(0, 191, 255, 0.0)' }
+          ])
+        }
+      }
+    ]
+  }
+}
+
+const buildEigenzeitOption = (paperMode = false) => {
+  const data = metricsData.value
+  if (!data || data.length === 0) return null
+
+  const years = data.map(d => d.year)
   const priceIndexes = data.map(d => d.priceIndex !== null ? Number(d.priceIndex.toFixed(2)) : null)
   const medianLags = data.map(d => d.medianLag !== null ? Number(d.medianLag.toFixed(1)) : null)
+
+  const greenColor = paperMode ? '#15803d' : '#5cb85c'
+  const amberColor = paperMode ? '#c2410c' : '#ffaa00'
+  const splitColor = paperMode ? '#e2e8f0' : 'rgba(255, 255, 255, 0.05)'
+
+  return {
+    backgroundColor: paperMode ? '#ffffff' : 'transparent',
+    legend: paperMode
+      ? {
+          show: true,
+          top: 2,
+          textStyle: { color: '#1e293b', fontSize: 11 }
+        }
+      : undefined,
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: paperMode ? 'rgba(255, 255, 255, 0.96)' : 'rgba(15, 15, 25, 0.95)',
+      borderColor: greenColor,
+      borderWidth: 1,
+      textStyle: { color: paperMode ? '#111827' : '#eee', fontSize: 11 },
+      formatter: (params) => {
+        let res = `<div style="font-weight:bold;margin-bottom:4px;color:${greenColor};">${params[0].axisValue}</div>`
+        params.forEach(p => {
+          if (p.seriesName === 'Price Index') {
+            res += `<div>⏳ Price Index (&le;5y): <strong>${p.value !== null ? p.value + '%' : 'N/A'}</strong></div>`
+          } else if (p.seriesName === 'Median Epistemic Lag') {
+            res += `<div>🕰 Median Lag: <strong>${p.value !== null ? p.value + ' yrs' : 'N/A'}</strong></div>`
+          }
+        })
+        return res
+      }
+    },
+    grid: { left: 52, right: 58, top: paperMode ? 36 : 25, bottom: 28 },
+    xAxis: buildCommonXAxis(years, paperMode),
+    yAxis: [
+      {
+        type: 'value',
+        name: 'Price Index (%)',
+        nameTextStyle: { color: greenColor, fontSize: 10.5, fontWeight: paperMode ? 'bold' : 'normal' },
+        axisLine: { show: paperMode, lineStyle: { color: greenColor } },
+        axisLabel: { color: greenColor, fontSize: 10.5, formatter: '{value}%' },
+        splitLine: { lineStyle: { color: splitColor } }
+      },
+      {
+        type: 'value',
+        name: 'Median Lag (yrs)',
+        nameTextStyle: { color: amberColor, fontSize: 10.5, fontWeight: paperMode ? 'bold' : 'normal' },
+        axisLine: { show: paperMode, lineStyle: { color: amberColor } },
+        axisLabel: { color: amberColor, fontSize: 10.5, formatter: '{value} y' },
+        splitLine: { show: false }
+      }
+    ],
+    series: [
+      {
+        name: 'Price Index',
+        type: 'line',
+        yAxisIndex: 0,
+        data: priceIndexes,
+        smooth: true,
+        symbolSize: 6,
+        itemStyle: { color: greenColor },
+        lineStyle: { width: 2.2, color: greenColor }
+      },
+      {
+        name: 'Median Epistemic Lag',
+        type: 'line',
+        yAxisIndex: 1,
+        data: medianLags,
+        smooth: true,
+        symbolSize: 6,
+        itemStyle: { color: amberColor },
+        lineStyle: { width: 2.2, color: amberColor }
+      }
+    ]
+  }
+}
+
+const buildDiversityOption = (paperMode = false) => {
+  const data = metricsData.value
+  if (!data || data.length === 0) return null
+
+  const years = data.map(d => d.year)
   const shannonValues = data.map(d => Number(d.shannonDiversity.toFixed(3)))
 
-  // Common dark theme options
-  const commonXAxis = {
-    type: 'category',
-    data: years,
-    boundaryGap: false,
-    axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-    axisTick: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-    axisLabel: { color: '#888', fontSize: 10 }
-  }
+  const purpleColor = paperMode ? '#7c3aed' : '#9b59b6'
+  const splitColor = paperMode ? '#e2e8f0' : 'rgba(255, 255, 255, 0.05)'
 
-  // 1. CLOSURE CHART
+  return {
+    backgroundColor: paperMode ? '#ffffff' : 'transparent',
+    legend: paperMode
+      ? {
+          show: true,
+          top: 2,
+          textStyle: { color: '#1e293b', fontSize: 11 }
+        }
+      : undefined,
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: paperMode ? 'rgba(255, 255, 255, 0.96)' : 'rgba(15, 15, 25, 0.95)',
+      borderColor: purpleColor,
+      borderWidth: 1,
+      textStyle: { color: paperMode ? '#111827' : '#eee', fontSize: 11 },
+      formatter: (params) => {
+        let res = `<div style="font-weight:bold;margin-bottom:4px;color:${purpleColor};">${params[0].axisValue}</div>`
+        params.forEach(p => {
+          res += `<div>🌐 Shannon Entropy (H'): <strong>${p.value !== null ? p.value : '0.000'}</strong></div>`
+        })
+        return res
+      }
+    },
+    grid: { left: 50, right: 38, top: paperMode ? 36 : 25, bottom: 28 },
+    xAxis: buildCommonXAxis(years, paperMode),
+    yAxis: {
+      type: 'value',
+      name: "H' (nats)",
+      nameTextStyle: { color: purpleColor, fontSize: 10.5, fontWeight: paperMode ? 'bold' : 'normal' },
+      axisLine: { show: paperMode, lineStyle: { color: '#334155' } },
+      axisLabel: { color: purpleColor, fontSize: 10.5 },
+      splitLine: { lineStyle: { color: splitColor } }
+    },
+    series: [
+      {
+        name: 'Shannon Diversity',
+        type: 'line',
+        data: shannonValues,
+        smooth: true,
+        symbolSize: 6,
+        itemStyle: { color: purpleColor },
+        lineStyle: { width: 2.5, color: purpleColor },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: paperMode ? 'rgba(124, 58, 237, 0.20)' : 'rgba(155, 89, 182, 0.3)' },
+            { offset: 1, color: paperMode ? 'rgba(124, 58, 237, 0.0)' : 'rgba(155, 89, 182, 0.0)' }
+          ])
+        }
+      }
+    ]
+  }
+}
+
+const initOrUpdateCharts = () => {
+  const data = metricsData.value
+  if (!data || data.length === 0) return
+
   if (chartClosureRef.value) {
-    if (!chartClosure) {
-      chartClosure = echarts.init(chartClosureRef.value)
-    }
-    const closureOption = {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(15, 15, 25, 0.95)',
-        borderColor: '#00bfff',
-        borderWidth: 1,
-        textStyle: { color: '#eee', fontSize: 11 },
-        formatter: (params) => {
-          let res = `<div style="font-weight:bold;margin-bottom:4px;color:#00bfff;">${params[0].axisValue}</div>`
-          params.forEach(p => {
-            if (p.seriesName === 'Operational Closure Rate') {
-              res += `<div>🔒 Closure Rate: <strong>${p.value !== null ? p.value + '%' : 'N/A'}</strong></div>`
-            } else if (p.seriesName === 'Core Papers') {
-              res += `<div>📄 INCOSE Papers: <strong>${p.value}</strong></div>`
-            }
-          })
-          return res
-        }
-      },
-      grid: { left: 45, right: 55, top: 25, bottom: 25 },
-      xAxis: { ...commonXAxis, boundaryGap: true },
-      yAxis: [
-        {
-          type: 'value',
-          name: '%',
-          nameTextStyle: { color: '#00bfff', fontSize: 10 },
-          axisLabel: { color: '#00bfff', fontSize: 10, formatter: '{value}%' },
-          splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } }
-        },
-        {
-          type: 'value',
-          name: 'Papers',
-          nameTextStyle: { color: '#777', fontSize: 10 },
-          axisLabel: { color: '#777', fontSize: 10 },
-          splitLine: { show: false }
-        }
-      ],
-      series: [
-        {
-          name: 'Core Papers',
-          type: 'bar',
-          yAxisIndex: 1,
-          data: paperCounts,
-          barMaxWidth: 16,
-          itemStyle: {
-            color: 'rgba(255, 255, 255, 0.09)',
-            borderRadius: [3, 3, 0, 0]
-          }
-        },
-        {
-          name: 'Operational Closure Rate',
-          type: 'line',
-          yAxisIndex: 0,
-          data: closureRates,
-          smooth: true,
-          symbolSize: 6,
-          itemStyle: { color: '#00bfff' },
-          lineStyle: { width: 2.5, color: '#00bfff' },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(0, 191, 255, 0.3)' },
-              { offset: 1, color: 'rgba(0, 191, 255, 0.0)' }
-            ])
-          }
-        }
-      ]
-    }
-    chartClosure.setOption(closureOption, true)
+    if (!chartClosure) chartClosure = echarts.init(chartClosureRef.value)
+    const opt = buildClosureOption(isPaperMode.value)
+    if (opt) chartClosure.setOption(opt, true)
   }
 
-  // 2. EIGENZEIT CHART (Price Index vs Median Lag)
   if (chartEigenzeitRef.value) {
-    if (!chartEigenzeit) {
-      chartEigenzeit = echarts.init(chartEigenzeitRef.value)
-    }
-    const eigenzeitOption = {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(15, 15, 25, 0.95)',
-        borderColor: '#5cb85c',
-        borderWidth: 1,
-        textStyle: { color: '#eee', fontSize: 11 },
-        formatter: (params) => {
-          let res = `<div style="font-weight:bold;margin-bottom:4px;color:#5cb85c;">${params[0].axisValue}</div>`
-          params.forEach(p => {
-            if (p.seriesName === 'Price Index') {
-              res += `<div>⏳ Price Index (&le;5y): <strong>${p.value !== null ? p.value + '%' : 'N/A'}</strong></div>`
-            } else if (p.seriesName === 'Median Epistemic Lag') {
-              res += `<div>🕰 Median Lag: <strong>${p.value !== null ? p.value + ' yrs' : 'N/A'}</strong></div>`
-            }
-          })
-          return res
-        }
-      },
-      grid: { left: 45, right: 55, top: 25, bottom: 25 },
-      xAxis: commonXAxis,
-      yAxis: [
-        {
-          type: 'value',
-          name: 'Price Index (%)',
-          nameTextStyle: { color: '#5cb85c', fontSize: 10 },
-          axisLabel: { color: '#5cb85c', fontSize: 10, formatter: '{value}%' },
-          splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } }
-        },
-        {
-          type: 'value',
-          name: 'Median Lag (yrs)',
-          nameTextStyle: { color: '#ffaa00', fontSize: 10 },
-          axisLabel: { color: '#ffaa00', fontSize: 10, formatter: '{value} y' },
-          splitLine: { show: false }
-        }
-      ],
-      series: [
-        {
-          name: 'Price Index',
-          type: 'line',
-          yAxisIndex: 0,
-          data: priceIndexes,
-          smooth: true,
-          symbolSize: 6,
-          itemStyle: { color: '#5cb85c' },
-          lineStyle: { width: 2, color: '#5cb85c' }
-        },
-        {
-          name: 'Median Epistemic Lag',
-          type: 'line',
-          yAxisIndex: 1,
-          data: medianLags,
-          smooth: true,
-          symbolSize: 6,
-          itemStyle: { color: '#ffaa00' },
-          lineStyle: { width: 2, color: '#ffaa00' }
-        }
-      ]
-    }
-    chartEigenzeit.setOption(eigenzeitOption, true)
+    if (!chartEigenzeit) chartEigenzeit = echarts.init(chartEigenzeitRef.value)
+    const opt = buildEigenzeitOption(isPaperMode.value)
+    if (opt) chartEigenzeit.setOption(opt, true)
   }
 
-  // 3. SHANNON DIVERSITY CHART
   if (chartDiversityRef.value) {
-    if (!chartDiversity) {
-      chartDiversity = echarts.init(chartDiversityRef.value)
-    }
-    const diversityOption = {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(15, 15, 25, 0.95)',
-        borderColor: '#9b59b6',
-        borderWidth: 1,
-        textStyle: { color: '#eee', fontSize: 11 },
-        formatter: (params) => {
-          let res = `<div style="font-weight:bold;margin-bottom:4px;color:#9b59b6;">${params[0].axisValue}</div>`
-          params.forEach(p => {
-            res += `<div>🌐 Shannon Entropy (H'): <strong>${p.value !== null ? p.value : '0.000'}</strong></div>`
-          })
-          return res
-        }
-      },
-      grid: { left: 45, right: 35, top: 25, bottom: 25 },
-      xAxis: commonXAxis,
-      yAxis: {
-        type: 'value',
-        name: "H' (nats)",
-        nameTextStyle: { color: '#9b59b6', fontSize: 10 },
-        axisLabel: { color: '#9b59b6', fontSize: 10 },
-        splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } }
-      },
-      series: [
-        {
-          name: 'Shannon Diversity',
-          type: 'line',
-          data: shannonValues,
-          smooth: true,
-          symbolSize: 6,
-          itemStyle: { color: '#9b59b6' },
-          lineStyle: { width: 2.5, color: '#9b59b6' },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(155, 89, 182, 0.3)' },
-              { offset: 1, color: 'rgba(155, 89, 182, 0.0)' }
-            ])
-          }
-        }
-      ]
-    }
-    chartDiversity.setOption(diversityOption, true)
+    if (!chartDiversity) chartDiversity = echarts.init(chartDiversityRef.value)
+    const opt = buildDiversityOption(isPaperMode.value)
+    if (opt) chartDiversity.setOption(opt, true)
+  }
+}
+
+const exportChartForPrint = (chartKey) => {
+  const subtitle = getScopeSubtitle()
+  if (chartKey === 'closure') {
+    const option = buildClosureOption(true)
+    if (!option) return
+    exportEChartForPrint({
+      option,
+      filename: 'incose_operational_closure_30y_300dpi.png',
+      width: 1200,
+      height: 520,
+      pixelRatio: 3,
+      title: `Operational Closure Rate (%) over Time (${temporalSpan.value})`,
+      subtitle
+    })
+  } else if (chartKey === 'eigenzeit') {
+    const option = buildEigenzeitOption(true)
+    if (!option) return
+    exportEChartForPrint({
+      option,
+      filename: 'incose_eigenzeit_price_index_lag_30y_300dpi.png',
+      width: 1200,
+      height: 520,
+      pixelRatio: 3,
+      title: `Eigenzeit: Price Index (≤5 yrs) vs. Median Epistemic Lag (${temporalSpan.value})`,
+      subtitle
+    })
+  } else if (chartKey === 'diversity') {
+    const option = buildDiversityOption(true)
+    if (!option) return
+    exportEChartForPrint({
+      option,
+      filename: 'incose_shannon_diversity_30y_300dpi.png',
+      width: 1200,
+      height: 520,
+      pixelRatio: 3,
+      title: `Interdisciplinary Breadth: Shannon Diversity (H') (${temporalSpan.value})`,
+      subtitle
+    })
   }
 }
 
@@ -732,9 +892,57 @@ onBeforeUnmount(() => {
 
 .view-tabs {
   display: flex;
+  align-items: center;
   gap: 6px;
   margin-bottom: 10px;
   flex-wrap: wrap;
+}
+
+.tabs-right-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  color: #ccc;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.icon-tool-btn:hover {
+  background: rgba(0, 191, 255, 0.18);
+  border-color: #00bfff;
+  color: #fff;
+}
+
+.icon-tool-btn.active {
+  background: rgba(240, 173, 78, 0.22);
+  border-color: #f0ad4e;
+  color: #f0ad4e;
+}
+
+.icon-tool-btn.print-btn {
+  border-color: rgba(92, 184, 92, 0.45);
+  color: #5cb85c;
+  background: rgba(92, 184, 92, 0.12);
+}
+
+.icon-tool-btn.print-btn:hover {
+  background: #5cb85c;
+  border-color: #5cb85c;
+  color: #050510;
 }
 
 .tab-btn {
@@ -787,6 +995,29 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.chart-card.is-paper-mode {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.chart-card.is-paper-mode .card-title h3 {
+  color: #0f172a;
+}
+
+.chart-card.is-paper-mode .legend-item {
+  color: #334155;
+}
+
+.chart-card.is-paper-mode .legend-color.gray-bar {
+  background: rgba(100, 116, 139, 0.45);
+}
+
+.chart-card.is-paper-mode .help-icon {
+  color: #475569;
+  border-color: #94a3b8;
 }
 
 .chart-card.expanded-chart {
@@ -923,6 +1154,3 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 </style>
-
-
-
