@@ -63,6 +63,23 @@ export function matchesTaxonomy(node, taxonomy) {
   return true
 }
 
+/**
+ * Ranks Domain Translator papers using strictly independent internal INCOSE citations
+ * (excluding self-citations where citing and cited papers share any author).
+ *
+ * - 'impact': Resonance = Indep_In * log2(1 + Env_Out)
+ * - 'harmonic': Harmonic Balance (F1) = (2 * Env_Out * Indep_In) / (Env_Out + Indep_In)
+ */
+export function computeTranslatorScore(envCount, indepIn, mode = 'impact') {
+  const e = Number(envCount) || 0
+  const i = Number(indepIn) || 0
+  if (e <= 0 || i <= 0) return 0
+  if (mode === 'harmonic') {
+    return (2 * e * i) / (e + i)
+  }
+  return i * Math.log2(1 + e)
+}
+
 
 export const useGraphStore = defineStore('graph', {
   state: () => ({
@@ -71,8 +88,10 @@ export const useGraphStore = defineStore('graph', {
       taxonomy: null 
     },
     translatorLensActive: false,
+    translatorScoringMode: 'impact', // 'impact' | 'harmonic'
     isBlindSpotsOpen: false,
     isLongitudinalOpen: false,
+    isGuideOpen: false,
     activePreset: null, // 'bridges' | 'classics' | 'frontier' | 'blindspots' | null
 
     graphModel: null,
@@ -111,6 +130,8 @@ export const useGraphStore = defineStore('graph', {
       showEnv: true,
       hideLeaves: false,
       layoutMode: 'force',
+      globalViewMode: 'macro', // 'macro' | 'raw'
+      macroGranularity: 'fields', // 'fields' | 'subfields'
       collapseCliqueSuperNode: true,
       enableParticles: true
     },
@@ -197,7 +218,7 @@ export const useGraphStore = defineStore('graph', {
       try {
         this.graphModel = markRaw(parseIncoseJson(rawJsonData))
         this.isLoaded = true
-        this.isVizActive = false
+        this.isVizActive = true
         this.recalculateMetrics()
       } catch (err) {
         console.error("Parse error:", err)
@@ -757,7 +778,7 @@ export const useGraphStore = defineStore('graph', {
     },
 
     diffusionStats(state) {
-      if (!state.graphModel || (state.activeFilters.years.length === 0 && !state.activeFilters.taxonomy)) {
+      if (!state.graphModel || (state.activeFilters.years.length === 0 && !state.activeFilters.taxonomy && !state.translatorLensActive)) {
         return null;
       }
 
@@ -1508,6 +1529,225 @@ export const useGraphStore = defineStore('graph', {
         selectedJournalLabels: selectedJournalLabels.length > 0 ? selectedJournalLabels : ['No Journals Selected'],
         taxonomyLabel
       };
+    },
+    macroLandscapeGraph(state) {
+      if (!state.graphModel) return { nodes: [], links: [] }
+
+      const isSubfieldMode = state.vizSettings.macroGranularity === 'subfields'
+      const activeYears = state.activeFilters.years || []
+      const activeTax = state.activeFilters.taxonomy
+      const useActiveIds = state.metrics?.isCitationFilterActive && state.activeNodeIds
+
+      // 1. Identify eligible Core nodes
+      const eligibleCoreIds = new Set()
+      state.graphModel.nodes.forEach(n => {
+        if (n.type !== 'incose_source') return
+        if (!passesIssnFilter(n, state.trackedIssns, state.selectedISSNs)) return
+        if (useActiveIds && !state.activeNodeIds.has(n.id)) return
+        if (activeYears.length > 0) {
+          const yRaw = n.year || n.publicationYear
+          const y = yRaw ? parseInt(yRaw, 10) : NaN
+          if (!activeYears.includes(y)) return
+        }
+        eligibleCoreIds.add(n.id)
+      })
+
+      // 2. Aggregate external discipline buckets & per-translator discipline weights
+      const bucketStats = new Map() // bucketKey -> { key, title, domain, field, subfield, level, pathString, totalCitations, uniqueWorks: Set, translators: Set }
+      const translatorLinks = new Map() // coreId -> Map(bucketKey -> count)
+      const roles = this.nodeRoles
+
+      state.graphModel.links.forEach(l => {
+        const sId = typeof l.source === 'object' ? l.source.id : l.source
+        const tId = typeof l.target === 'object' ? l.target.id : l.target
+        if (!eligibleCoreIds.has(sId)) return
+
+        const tNode = state.graphModel.nodes.get(tId)
+        if (!tNode || tNode.type === 'incose_source' || tNode.type === 'irrelevant') return
+        if (useActiveIds && !state.activeNodeIds.has(tId)) return
+        if (!tNode.domain || tNode.domain === 'Unknown') return
+        if (activeTax && !matchesTaxonomy(tNode, activeTax)) return
+
+        const fieldName = tNode.field && tNode.field !== 'Unknown' ? tNode.field : 'Other'
+        const subfieldName = tNode.subfield && tNode.subfield !== 'Unknown' ? tNode.subfield : 'Other'
+        if (fieldName === 'Other') return
+        if (isSubfieldMode && subfieldName === 'Other') return
+
+        const bucketTitle = isSubfieldMode ? subfieldName : fieldName
+        const bucketLevel = isSubfieldMode ? 'subfield' : 'field'
+        const pathString = isSubfieldMode
+          ? `${tNode.domain} > ${fieldName} > ${subfieldName}`
+          : `${tNode.domain} > ${fieldName}`
+        const bucketKey = `macro-${bucketLevel}-${pathString}`
+
+        if (!bucketStats.has(bucketKey)) {
+          bucketStats.set(bucketKey, {
+            id: bucketKey,
+            title: bucketTitle,
+            domain: tNode.domain,
+            field: fieldName,
+            subfield: isSubfieldMode ? subfieldName : 'Unknown',
+            level: bucketLevel,
+            pathString,
+            totalCitations: 0,
+            uniqueWorks: new Set(),
+            translators: new Set()
+          })
+        }
+        const b = bucketStats.get(bucketKey)
+        b.totalCitations++
+        b.uniqueWorks.add(tId)
+
+        const roleObj = roles.get(sId)
+        if (roleObj && roleObj.role === 'True Translator') {
+          b.translators.add(sId)
+          if (!translatorLinks.has(sId)) translatorLinks.set(sId, new Map())
+          const tMap = translatorLinks.get(sId)
+          tMap.set(bucketKey, (tMap.get(bucketKey) || 0) + 1)
+        }
+      })
+
+      // 3. Select Discipline Super-Nodes (Planets) that have at least 1 True Translator
+      const minBucketCites = activeTax ? 2 : 20
+      const maxPlanets = isSubfieldMode ? 40 : 30
+      const selectedPlanets = Array.from(bucketStats.values())
+        .filter(b => b.totalCitations >= minBucketCites && b.translators.size > 0)
+        .sort((a, b) => b.totalCitations - a.totalCitations)
+        .slice(0, maxPlanets)
+
+      const planetIds = new Set(selectedPlanets.map(p => p.id))
+
+      // 4. Domain-Balanced Translator Selection:
+      // Pick the top K translators FOR EACH discipline planet so smaller domains
+      // (Life Sciences, Health Sciences, Psychology, Mathematics, etc.) are fairly represented
+      // rather than drowned out by Engineering/Business volume.
+      const perPlanetQuota = activeTax ? 10 : (isSubfieldMode ? 2 : 3)
+      const selectedTranslatorsMap = new Map() // coreId -> { coreNode, roleObj, bMap, bestSynergy, topBucketTitle }
+
+      // Build reverse index: planetId -> list of { coreId, count }
+      const planetToTranslators = new Map()
+      translatorLinks.forEach((bMap, coreId) => {
+        bMap.forEach((cnt, bKey) => {
+          if (!planetIds.has(bKey)) return
+          if (!planetToTranslators.has(bKey)) planetToTranslators.set(bKey, [])
+          planetToTranslators.get(bKey).push({ coreId, cnt })
+        })
+      })
+
+      selectedPlanets.forEach(planet => {
+        const candidates = planetToTranslators.get(planet.id) || []
+        const scored = candidates
+          .map(({ coreId, cnt }) => {
+            const coreNode = state.graphModel.nodes.get(coreId)
+            const roleObj = roles.get(coreId)
+            if (!coreNode || !roleObj) return null
+            const localSynergy = computeTranslatorScore(cnt, roleObj.cInIndep || 0, state.translatorScoringMode)
+            return { coreId, coreNode, roleObj, cnt, localSynergy }
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.localSynergy - a.localSynergy)
+          .slice(0, perPlanetQuota)
+
+        scored.forEach(item => {
+          const existing = selectedTranslatorsMap.get(item.coreId)
+          if (!existing) {
+            selectedTranslatorsMap.set(item.coreId, {
+              coreNode: item.coreNode,
+              roleObj: item.roleObj,
+              bMap: translatorLinks.get(item.coreId),
+              bestSynergy: item.localSynergy,
+              topBucketTitle: planet.title
+            })
+          } else if (item.localSynergy > existing.bestSynergy) {
+            existing.bestSynergy = item.localSynergy
+            existing.topBucketTitle = planet.title
+          }
+        })
+      })
+
+      // 5. Build clean bipartite links & nodes (every selected planet is guaranteed connected)
+      const nodes = []
+      const links = []
+      const connectedPlanetIds = new Set()
+
+      selectedTranslatorsMap.forEach(t => {
+        // Keep top 3 strongest discipline channels per translator so cross-domain bridges visibly link planets
+        const channels = Array.from(t.bMap.entries())
+          .filter(([bKey]) => planetIds.has(bKey))
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+
+        if (channels.length === 0) return
+
+        nodes.push({
+          id: t.coreNode.id,
+          title: t.coreNode.title,
+          type: 'macro_translator',
+          authors: t.coreNode.authors,
+          publicationYear: t.coreNode.publicationYear || t.coreNode.year,
+          issns: t.coreNode.issns || [],
+          domain: t.coreNode.domain,
+          inDegree: t.coreNode.inDegree || 0,
+          eOut: t.roleObj.eOut || 0,
+          cInIndep: t.roleObj.cInIndep || 0,
+          synergy: Number(t.bestSynergy.toFixed(1)),
+          topField: t.topBucketTitle
+        })
+
+        channels.forEach(([bKey, weight]) => {
+          connectedPlanetIds.add(bKey)
+          // Direction: Discipline Planet -> Translator Star (knowledge flow direction)
+          links.push({
+            source: bKey,
+            target: t.coreNode.id,
+            weight,
+            isMacroLink: true
+          })
+        })
+      })
+
+      // Sort connected planets by Domain so initial ring clusters same-domain planets together
+      const domainOrder = {
+        'Physical Sciences': 0,
+        'Social Sciences': 1,
+        'Life Sciences': 2,
+        'Health Sciences': 3
+      }
+      const connectedPlanets = selectedPlanets
+        .filter(p => connectedPlanetIds.has(p.id))
+        .sort((a, b) => {
+          const da = domainOrder[a.domain] ?? 9
+          const db = domainOrder[b.domain] ?? 9
+          if (da !== db) return da - db
+          return b.totalCitations - a.totalCitations
+        })
+
+      connectedPlanets.forEach((p, idx) => {
+        const angle = (idx / Math.max(1, connectedPlanets.length)) * 2 * Math.PI
+        const radius = 120
+        nodes.push({
+          id: p.id,
+          title: p.title,
+          type: 'discipline_supernode',
+          domain: p.domain,
+          field: p.field,
+          subfield: p.subfield,
+          level: p.level,
+          pathString: p.pathString,
+          totalCitations: p.totalCitations,
+          uniqueWorks: p.uniqueWorks.size,
+          translatorCount: p.translators.size,
+          inDegree: p.totalCitations,
+          authors: `${p.domain} (${p.uniqueWorks.size} unique works)`,
+          issns: [],
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius,
+          z: ((idx % 3) - 1) * 35
+        })
+      })
+
+      return { nodes, links }
     }
+
   }
 })

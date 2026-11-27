@@ -3,7 +3,7 @@
     <div class="access-gate-card">
       <div class="gate-header">
         <span class="gate-badge">Encrypted Research Preview</span>
-        <h1 class="gate-title">INCOSE Epistemic Workbench — Protected Research Preview</h1>
+        <h1 class="gate-title">INCOSE Bibliometric Workbench — Protected Research Preview</h1>
         <p class="gate-subtitle">
           Enter your access key to decrypt and load the bundled dataset (<code>data.enc</code>) locally in your browser, or load a local unencrypted JSON file.
         </p>

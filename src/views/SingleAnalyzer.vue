@@ -64,7 +64,7 @@
           class="preset-btn blindspots-btn" 
           :class="{ active: store.activePreset === 'blindspots' }"
           @click="store.applyUseCasePreset('blindspots')"
-          title="Opens macroscopic table comparing Rejection Rate and Epistemic Lag across all external sciences."
+          title="Opens macroscopic audit comparing One-Off Citation Rate, Translator-Backed Share, and Citation Age across all external sciences."
         >
           👁 Blind Spots Matrix
         </button>
@@ -72,7 +72,7 @@
           class="preset-btn longitudinal-btn" 
           :class="{ active: store.isLongitudinalOpen }"
           @click="store.isLongitudinalOpen = true"
-          title="Opens 30-Year Longitudinal Trends: Operational Closure, Price Index, Epistemic Lag, and Shannon Diversity."
+          title="Opens 30-Year Longitudinal Trends: Self-Reference Rate, Price Index, Citation Age, and Shannon Diversity."
         >
           📈 30Y Trends
         </button>
@@ -82,6 +82,14 @@
           title="Reset all advanced filters, slices, and presets"
         >
           ↺ Reset All
+        </button>
+        <button 
+          class="preset-btn" 
+          :class="{ active: store.isGuideOpen }"
+          @click="store.isGuideOpen = true"
+          title="Open Quick Guide: Filter Rules, Self-Citation Policy, Translator Formulas, and Visual Legend"
+        >
+          ℹ Guide
         </button>
       </div>
 
@@ -97,6 +105,7 @@
     <NodeInfoModal /> <!-- Внедряем меню поверх графа -->
     <BlindSpotsModal />
     <LongitudinalModal />
+    <GuideModal />
     <AccessGateModal v-if="!store.isLoaded" />
     
     <div id="empty-state" v-if="!store.focusedNodeId && !store.isLoaded">
@@ -114,6 +123,7 @@ import MetricsPanel from '../components/panels/MetricsPanel.vue'
 import NodeInfoModal from '../components/modals/NodeInfoModal.vue'
 import BlindSpotsModal from '../components/modals/BlindSpotsModal.vue'
 import LongitudinalModal from '../components/modals/LongitudinalModal.vue'
+import GuideModal from '../components/modals/GuideModal.vue'
 import AccessGateModal from '../components/modals/AccessGateModal.vue'
 
 const store = useGraphStore()

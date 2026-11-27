@@ -3,14 +3,14 @@
     <h3 class="panel-title collapsible-header" @click="isDiffusionOpen = !isDiffusionOpen">
       <span class="panel-title-text">
         Knowledge Diffusion Analysis
-        <span class="help-icon" @click.stop title="Measures 'Anschlussfähigkeit' (Recursive Connectability). Did importing this external knowledge trigger subsequent internal communications within the core system?">?</span>
+        <HelpTip term="knowledgeDiffusion" />
       </span>
       <span class="toggle-icon">{{ isDiffusionOpen ? '▼' : '▶' }}</span>
     </h3>
     
     <div v-show="isDiffusionOpen" class="collapsible-content">
       <div v-if="!isUnlocked" class="empty-state">
-        Select at least one publication year (Left Panel) or a taxonomy sector (Sunburst) to analyze knowledge diffusion.
+        Select a publication year (Left Panel), a discipline sector (Sunburst / 3D Map), or click Domain Translators to inspect Boundary Spanners and diffusion.
       </div>
       
       <div v-else>
@@ -21,8 +21,8 @@
           </div>
           <div class="metric-box">
             <span class="m-label">
-              Epistemic Lag
-              <span class="help-icon" title="Luhmann's Temporal Asynchrony (Eigenzeit): Measures how old external knowledge is when imported by INCOSE (Year_Core_Paper - Year_Cited_Env_Paper). Median and Interquartile Range (IQR: Q1–Q3) are reported alongside Mean to provide a statistically robust metric against right-skewed citation distributions (resistant to historical outliers). Low lag (3-6 yrs) = active coupling with contemporary science; High lag (>15 yrs) = reliance on historical canon.">?</span>
+              Citation Age (Lag)
+              <HelpTip term="citationAge" />
             </span>
             <span class="m-value lag-value">
               {{ medianLag !== null ? medianLag.toFixed(1) + ' yrs' : 'N/A' }}
@@ -44,7 +44,7 @@
         <div class="histogram-header">
           <span class="h-title">
             Concept Rooting
-            <span class="help-icon" title="Tracks Meaning Condensation over time. Switch to Normalized (%) to adjust for the overall growth of the INCOSE publication volume.">?</span>
+            <HelpTip term="conceptRooting" />
           </span>
           <div class="btn-toggle-group">
             <button 
@@ -76,35 +76,42 @@
         No subsequent citations found in the core network for this selection.
       </div>
 
-      <!-- Boundary Spanners (Top Translators) -->
+      <!-- Domain Translators (Boundary Spanners) -->
       <div v-if="boundarySpanners && boundarySpanners.length > 0" class="spanners-box">
         <div class="spanners-header">
           <span class="h-title">
-            Boundary Spanners
-            <span class="help-icon" title="Identifies mechanisms of 'Interpenetration'. Core papers that imported external knowledge and successfully translated it into the system's code (achieving high internal citation).">?</span>
+            Domain Translators
+            <HelpTip term="boundarySpanners" />
           </span>
           <div class="btn-toggle-group">
             <button 
               type="button" 
               class="toggle-btn" 
-              :class="{ active: spannerSortMode === 'synergy' }" 
-              @click="spannerSortMode = 'synergy'"
-              title="True Translators: Ranked by Translation Resonance = envCitations * Math.log2(1 + inDegree). Requires inDegree >= 1."
-            >⚡ Synergy</button>
+              :class="{ active: spannerSortMode === 'score' && store.translatorScoringMode === 'impact' }" 
+              @click="setScoringSort('impact')"
+              title="Resonance: Indep_In × log₂(1 + Env_Out). Prioritizes independent internal INCOSE adoption."
+            >⚡ Impact</button>
+            <button 
+              type="button" 
+              class="toggle-btn" 
+              :class="{ active: spannerSortMode === 'score' && store.translatorScoringMode === 'harmonic' }" 
+              @click="setScoringSort('harmonic')"
+              title="Harmonic Balance (F1): 2 × Env × Indep_In / (Env + Indep_In). Rewards symmetric external & internal strength."
+            >⚖ F1</button>
             <button 
               type="button" 
               class="toggle-btn" 
               :class="{ active: spannerSortMode === 'inDegree' }" 
               @click="spannerSortMode = 'inDegree'"
-              title="Ranked by internal INCOSE citations (inDegree) first, then external references."
-            >📥 Core In</button>
+              title="Ranked by independent internal INCOSE citations (self-citations excluded)."
+            >📥 Indep</button>
             <button 
               type="button" 
               class="toggle-btn" 
               :class="{ active: spannerSortMode === 'envOut' }" 
               @click="spannerSortMode = 'envOut'"
-              title="Ranked by volume of references to the selected environment (envCitations)."
-            >📤 Env Out</button>
+              title="Ranked by volume of references to the selected external discipline."
+            >📤 Env</button>
           </div>
         </div>
 
@@ -129,7 +136,7 @@
             </div>
             <div class="spanner-badges">
               <span class="spanner-badge env-badge" title="Citations to selected environment">Env: {{ item.envCitations }}</span>
-              <span class="spanner-badge in-badge" title="INCOSE in-degree citations">In: {{ item.inDegree }}</span>
+              <span class="spanner-badge in-badge" :title="`Independent internal INCOSE citations (self-citations excluded). Raw total in-degree: ${item.rawInDegree}`">Indep: {{ item.indepIn }}</span>
             </div>
           </li>
         </ul>
@@ -141,17 +148,27 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useGraphStore, computeLagStats } from '../../store/graphStore.js'
+import { useGraphStore, computeLagStats, computeTranslatorScore } from '../../store/graphStore.js'
+import HelpTip from '../common/HelpTip.vue'
 
 const store = useGraphStore()
 const isDiffusionOpen = ref(true)
 const isNormalized = ref(false)
-const spannerSortMode = ref('synergy')
+const spannerSortMode = ref('score')
+
+const setScoringSort = (mode) => {
+  store.translatorScoringMode = mode
+  spannerSortMode.value = 'score'
+}
 const visibleSpannersCount = ref(20)
 
-// 1. Unlock Panel: display if either a year OR a taxonomy sector is selected
+// 1. Unlock Panel: display if a year, taxonomy sector, OR Translator Lens is active
 const isUnlocked = computed(() => {
-  return store.activeFilters.years.length > 0 || !!store.activeFilters.taxonomy
+  return (
+    store.activeFilters.years.length > 0 ||
+    !!store.activeFilters.taxonomy ||
+    store.translatorLensActive
+  )
 })
 
 const getItemNormalizedRatio = (item) => {
@@ -238,7 +255,7 @@ const validEnvNodeIds = computed(() => {
   return ids
 })
 
-// Epistemic Lag & Boundary Spanners Calculation
+// Citation Age (Lag) & Boundary Spanners Calculation
 const diffusionMetrics = computed(() => {
   if (!store.graphModel || !isUnlocked.value) {
     return { medianLag: null, meanLag: null, lagQ1: null, lagQ3: null, candidateSpanners: [] }
@@ -270,7 +287,7 @@ const diffusionMetrics = computed(() => {
       // Count citations to environment for Translator ranking
       envCitationCounts.set(sId, (envCitationCounts.get(sId) || 0) + 1)
 
-      // Calculate Epistemic Lag: Delta = Core_Year - Env_Year
+      // Calculate Citation Age (Lag): Delta = Core_Year - Env_Year
       if (sNode && tNode) {
         const sYearRaw = sNode.year || sNode.publicationYear
         const tYearRaw = tNode.year || tNode.publicationYear
@@ -310,13 +327,17 @@ const diffusionMetrics = computed(() => {
 
   const lagStats = computeLagStats(lags)
 
-  // Build candidate translator papers
+  // Build candidate translator papers (strictly using independent Core citations, excluding self-citations)
+  const roles = store.nodeRoles
+  const scoringMode = store.translatorScoringMode
   const candidates = []
   envCitationCounts.forEach((envCitations, sId) => {
     const node = coreNodeMap.get(sId)
     if (node) {
-      const inDegree = node.inDegree || 0
-      const synergyScore = inDegree > 0 ? envCitations * Math.log2(1 + inDegree) : 0
+      const roleObj = roles ? roles.get(sId) : null
+      const rawInDegree = node.inDegree || 0
+      const indepIn = roleObj ? (roleObj.cInIndep || 0) : rawInDegree
+      const translatorScore = computeTranslatorScore(envCitations, indepIn, scoringMode)
 
       let topTranslatedDomain = 'N/A'
       const catMap = spannerDomainCounts.get(sId)
@@ -337,8 +358,9 @@ const diffusionMetrics = computed(() => {
       candidates.push({
         node,
         envCitations,
-        inDegree,
-        synergyScore,
+        indepIn,
+        rawInDegree,
+        translatorScore,
         topTranslatedDomain
       })
     }
@@ -358,23 +380,23 @@ const meanLag = computed(() => diffusionMetrics.value.meanLag)
 const lagQ1 = computed(() => diffusionMetrics.value.lagQ1)
 const lagQ3 = computed(() => diffusionMetrics.value.lagQ3)
 
-// Dynamic sorting for Boundary Spanners (top 5)
+// Dynamic sorting for Domain Translators
 const boundarySpanners = computed(() => {
   const list = [...(diffusionMetrics.value.candidateSpanners || [])]
-  if (spannerSortMode.value === 'synergy') {
+  if (spannerSortMode.value === 'score') {
     list.sort((a, b) => {
-      if (b.synergyScore !== a.synergyScore) {
-        return b.synergyScore - a.synergyScore
+      if (b.translatorScore !== a.translatorScore) {
+        return b.translatorScore - a.translatorScore
       }
-      if (b.envCitations !== a.envCitations) {
-        return b.envCitations - a.envCitations
+      if (b.indepIn !== a.indepIn) {
+        return b.indepIn - a.indepIn
       }
-      return b.inDegree - a.inDegree
+      return b.envCitations - a.envCitations
     })
   } else if (spannerSortMode.value === 'inDegree') {
     list.sort((a, b) => {
-      if (b.inDegree !== a.inDegree) {
-        return b.inDegree - a.inDegree
+      if (b.indepIn !== a.indepIn) {
+        return b.indepIn - a.indepIn
       }
       return b.envCitations - a.envCitations
     })
@@ -383,7 +405,7 @@ const boundarySpanners = computed(() => {
       if (b.envCitations !== a.envCitations) {
         return b.envCitations - a.envCitations
       }
-      return b.inDegree - a.inDegree
+      return b.indepIn - a.indepIn
     })
   }
   return list

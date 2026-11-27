@@ -39,6 +39,7 @@
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { useGraphStore } from '../../store/graphStore.js'
+import { getCanonicalDomainColor } from '../../utils/domainColors.js'
 
 const store = useGraphStore()
 const chartDom = ref(null)
@@ -46,8 +47,7 @@ let chartInstance = null
 const hasData = ref(false)
 const domainLegend = ref([])
 
-const baseColors = ['#00bfff', '#5cb85c', '#f0ad4e', '#d9534f', '#9b59b6', '#3498db', '#1abc9c', '#e67e22', '#e74c3c'];
-const getDomainColor = (index) => baseColors[index % baseColors.length];
+const getDomainColor = (domainName, index) => getCanonicalDomainColor(domainName, index);
 
 const buildSunburstData = () => {
   if (!store.graphModel) return []
@@ -136,7 +136,7 @@ const buildSunburstData = () => {
     const fieldNames = Object.keys(fObj).sort(); 
     const fieldValue = domainValue / (fieldNames.length || 1);
     
-    const dColor = getDomainColor(dIndex); 
+    const dColor = getDomainColor(dName, dIndex); 
     newLegend.push({ name: dName, color: dColor }); 
 
     let localMaxFieldCount = 0;

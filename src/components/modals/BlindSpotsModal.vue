@@ -7,16 +7,16 @@
 
       <div class="modal-header">
         <div class="title-with-badge">
-          <h2>Epistemic Blind Spots &amp; Disciplinary Asymmetry Audit</h2>
+          <h2>Disciplinary Blind Spots &amp; Asymmetry Audit</h2>
           <span class="luhmann-badge">Disciplinary Audit</span>
           <span class="journal-scope-badge" v-if="store.longitudinalScopeSummary" :title="store.longitudinalScopeSummary.selectedJournalLabels.join(', ')">
             📖 {{ store.longitudinalScopeSummary.selectedJournalLabels.join(', ') }}
           </span>
         </div>
         <p class="modal-subtitle">
-          Macroscopic audit quantifying which external disciplines INCOSE ignores, rejects, or assimilates with epistemic lag.<br />
-          <strong class="term">Irritation Rejection Rate:</strong> One-off perturbations (<span class="code-pill">inDegree = 1</span>) that failed to condense meaning into systemic memory.<br />
-          <strong class="term">Epistemic Lag:</strong> Mean temporal distance (<span class="code-pill">Year<sub>Core</sub> − Year<sub>Env</sub></span>) revealing reliance on outdated classics vs contemporary science.
+          Macroscopic audit quantifying which external disciplines INCOSE ignores, rejects, or assimilates with citation lag.<br />
+          <strong class="term">One-Off Citation Rate:</strong> One-off perturbations (<span class="code-pill">inDegree = 1</span>) that failed to condense meaning into systemic memory.<br />
+          <strong class="term">Citation Age (Lag):</strong> Median temporal distance (<span class="code-pill">Year<sub>Core</sub> − Year<sub>Env</sub></span>) revealing reliance on outdated classics vs contemporary science.
         </p>
 
         <!-- Clean Tab Bar -->
@@ -83,13 +83,13 @@
           <span class="r-val">{{ totalAuditedCitations.toLocaleString() }}</span>
         </div>
         <div class="ribbon-metric">
-          <span class="r-label">Systemic Rejection Rate</span>
+          <span class="r-label">Systemic One-Off Rate</span>
           <span class="r-val" :class="{ 'val-danger': overallRejectionRate > 85 }">
             {{ overallRejectionRate.toFixed(1) }}%
           </span>
         </div>
         <div class="ribbon-metric">
-          <span class="r-label">Median Epistemic Lag</span>
+          <span class="r-label">Median Citation Age</span>
           <span class="r-val" :class="{ 'val-warning': overallLagStats.median !== null && overallLagStats.median > 15 }">
             {{ overallLagStats.median !== null ? overallLagStats.median.toFixed(1) + ' yrs' : 'N/A' }}
           </span>
@@ -107,32 +107,32 @@
               <th class="th-category" @click="setSort('name')">
                 Category (Domain / Field / Subfield)
                 <span class="sort-icon" v-if="sortKey === 'name'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
-                <span class="help-icon" @click.stop title="3-tier OpenAlex disciplinary hierarchy (Domain ➔ Field ➔ Subfield). Click ▶ to drill down into sub-disciplines, or click Filter to slice the dashboard.">?</span>
+                <HelpTip term="taxonomyHierarchy" />
               </th>
               <th class="th-num" @click="setSort('totalCitations')">
                 Total Citations
                 <span class="sort-icon" v-if="sortKey === 'totalCitations'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
-                <span class="help-icon" @click.stop title="Total volume of outgoing citation links from INCOSE Core papers pointing to works in this discipline.">?</span>
+                <HelpTip term="totalCitations" />
               </th>
               <th class="th-num" @click="setSort('uniqueWorks')">
                 Unique Works
                 <span class="sort-icon" v-if="sortKey === 'uniqueWorks'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
-                <span class="help-icon" @click.stop title="Number of distinct external publications (articles, books, standards) cited at least once by INCOSE Core papers.">?</span>
+                <HelpTip term="uniqueWorks" />
               </th>
               <th class="th-num" @click="setSort('rejectionRate')">
-                Rejection Rate (1-off Noise)
+                One-Off Citation Rate
                 <span class="sort-icon" v-if="sortKey === 'rejectionRate'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
-                <span class="help-icon" @click.stop title="Luhmann's Irritation Rejection Rate: Percentage of unique external works cited ONLY ONCE in the entire INCOSE corpus (inDegree = 1). High values (>80%) indicate one-off perturbations that failed to condense into shared community memory.">?</span>
+                <HelpTip term="oneOffRate" />
               </th>
               <th class="th-num" @click="setSort('realizedShare')">
                 Translator-Backed (%)
                 <span class="sort-icon" v-if="sortKey === 'realizedShare'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
-                <span class="help-icon" @click.stop title="Share of citations to this discipline made by verified 'True Translators' (INCOSE papers with both external references AND independent internal citations from other INCOSE authors). Measures realized structural coupling vs. unresonated scout noise.">?</span>
+                <HelpTip term="translatorBacked" />
               </th>
               <th class="th-num" @click="setSort('medianLag')">
-                Epistemic Lag (Median / IQR)
+                Citation Age (Median / IQR)
                 <span class="sort-icon" v-if="sortKey === 'medianLag' || sortKey === 'avgLag'">{{ sortOrder === 'asc' ? '▲' : '▼' }}</span>
-                <span class="help-icon" @click.stop title="Luhmann's Temporal Asynchrony (Eigenzeit): Median and Interquartile Range (IQR: Q1–Q3) of citation age (Core_Year − External_Year), reported alongside mean (μ). Statistically robust against right-skewed citation distributions.">?</span>
+                <HelpTip term="citationAge" />
               </th>
             </tr>
           </thead>
@@ -304,7 +304,7 @@
                 :class="{ active: yMetric === 'assimilation' }" 
                 @click="setYMetric('assimilation')"
               >
-                Assimilation Rate (100% − Rejection %)
+                Repeated Citation Rate (100% − One-Off %)
               </button>
             </div>
           </div>
@@ -387,7 +387,7 @@
               </span>
             </div>
             <div class="kpi-box kpi-success">
-              <span class="kpi-label">Active Horizon (≥20 refs)</span>
+              <span class="kpi-label">Active Coverage (≥20 refs)</span>
               <span class="kpi-val val-success">
                 {{ absentAnalysis.activeCount }}
                 <small class="kpi-pct">({{ absentAnalysis.activePct }}%)</small>
@@ -426,7 +426,7 @@
           <!-- 2. ECharts 100% Horizontal Stacked Bar Chart -->
           <div class="horizon-chart-card" :class="{ 'is-paper-mode': isPaperMode }">
             <div class="chart-header-sub">
-              <span>Epistemic Horizon Coverage by Domain (100% Stacked)</span>
+              <span>Disciplinary Coverage by Domain (OpenAlex Catalog, 100% Stacked)</span>
               <span class="chart-header-hint">Hover a segment for preview • Click a segment to inspect full list</span>
             </div>
             <div ref="horizonChartRef" class="horizon-chart-canvas"></div>
@@ -570,7 +570,7 @@
 
       <div v-if="store.disciplinaryBlindSpots.length === 0 && activeTab !== 'absent'" class="empty-state">
         <p>No external domain classifications found in the current dataset.</p>
-        <span class="empty-hint">Load an OpenAlex-enriched JSON or run batch metadata enrichment to unlock epistemic blind spots analysis.</span>
+        <span class="empty-hint">Load an OpenAlex-enriched JSON or run batch metadata enrichment to unlock disciplinary blind spots analysis.</span>
       </div>
 
       <div class="modal-footer">
@@ -597,6 +597,8 @@ let canonicalTaxonomyLoadingPromise = null
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { useGraphStore, computeLagStats } from '../../store/graphStore.js'
+import { getCanonicalDomainColor } from '../../utils/domainColors.js'
+import HelpTip from '../common/HelpTip.vue'
 import {
   PRINT_DOMAIN_COLORS,
   PRINT_DEFAULT_PALETTE,
@@ -730,22 +732,12 @@ const overallLagStats = computed(() => {
 })
 
 // --- 🎯 2x2 Irritation Typology (Quadrants) Logic ---
-const DOMAIN_COLOR_MAP = {
-  'Physical Sciences': '#00bfff',
-  'Formal Sciences': '#9b59b6',
-  'Social Sciences': '#f0ad4e',
-  'Life Sciences': '#5cb85c',
-  'Health Sciences': '#d9534f'
-}
-const DEFAULT_PALETTE = ['#00bfff', '#5cb85c', '#f0ad4e', '#d9534f', '#9b59b6', '#3498db', '#1abc9c', '#e67e22', '#e74c3c']
-
 const getDomainColor = (domainName, idx = 0, paperMode = false) => {
   if (paperMode) {
     if (PRINT_DOMAIN_COLORS[domainName]) return PRINT_DOMAIN_COLORS[domainName]
     return PRINT_DEFAULT_PALETTE[idx % PRINT_DEFAULT_PALETTE.length]
   }
-  if (DOMAIN_COLOR_MAP[domainName]) return DOMAIN_COLOR_MAP[domainName]
-  return DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]
+  return getCanonicalDomainColor(domainName, idx)
 }
 
 const flattenedData = computed(() => {
@@ -1071,7 +1063,7 @@ const selectedSegmentDetails = computed(() => {
 
   if (bucket === 'active') {
     return {
-      label: 'Active Horizon (≥20 refs)',
+      label: 'Active Coverage (≥20 refs)',
       icon: '🟢',
       items: dg.activeItems,
       total: dg.total,
@@ -1413,8 +1405,8 @@ const buildQuadrantsOption = (paperMode = false, zoomBounds = null) => {
             <span style="color: ${lblClr};">Parent Domain:</span><span style="color: ${valClr}; font-weight: 500;">${raw.parentDomain || 'Unknown'}</span>
             <span style="color: ${lblClr};">Total Citations:</span><span style="color: ${valClr}; font-weight: 500;">${raw.totalCitations.toLocaleString()}</span>
             <span style="color: ${lblClr};">Unique Works:</span><span style="color: ${valClr}; font-weight: 500;">${raw.uniqueWorks.toLocaleString()}</span>
-            <span style="color: ${lblClr};">Median Epistemic Lag:</span><span style="color: #d97706; font-weight: 600;">${raw.medianLag !== null ? raw.medianLag.toFixed(1) + ' yrs' : 'N/A'}</span>
-            <span style="color: ${lblClr};">Irritation Rejection:</span><span style="color: ${raw.rejectionRate > 85 ? '#dc2626' : '#16a34a'}; font-weight: 600;">${raw.rejectionRate.toFixed(1)}%</span>
+            <span style="color: ${lblClr};">Median Citation Age:</span><span style="color: #d97706; font-weight: 600;">${raw.medianLag !== null ? raw.medianLag.toFixed(1) + ' yrs' : 'N/A'}</span>
+            <span style="color: ${lblClr};">One-Off Citation Rate:</span><span style="color: ${raw.rejectionRate > 85 ? '#dc2626' : '#16a34a'}; font-weight: 600;">${raw.rejectionRate.toFixed(1)}%</span>
             <span style="color: ${lblClr};">Translator-Backed:</span><span style="color: #16a34a; font-weight: 600;">${raw.realizedShare.toFixed(1)}%</span>
             <span style="color: ${lblClr};">Assimilation Rate:</span><span style="color: #16a34a; font-weight: 600;">${assimilationRate}%</span>
           </div>
@@ -1452,7 +1444,7 @@ const buildQuadrantsOption = (paperMode = false, zoomBounds = null) => {
         ],
     xAxis: {
       type: 'value',
-      name: 'Median Epistemic Lag (Years)',
+      name: 'Median Citation Age (Years)',
       nameLocation: 'middle',
       nameGap: 32,
       nameTextStyle: { color: axisNameColor, fontSize: 11.5, fontWeight: paperMode ? 'bold' : 'normal' },
@@ -1517,7 +1509,7 @@ const buildQuadrantsOption = (paperMode = false, zoomBounds = null) => {
         right: 44,
         bottom: 60,
         style: {
-          text: `EPISTEMIC BLIND SPOTS\n${subBR}`,
+          text: `DISCIPLINARY BLIND SPOTS\n${subBR}`,
           fill: paperMode ? 'rgba(185, 28, 28, 0.78)' : 'rgba(217, 83, 79, 0.45)',
           font: 'bold 9.5px sans-serif',
           textAlign: 'right'
@@ -1640,7 +1632,7 @@ const buildHorizonOption = (paperMode = false, forPrint = false) => {
 
         const meta =
           d.bucket === 'active'
-            ? { title: 'Active Horizon (≥20 refs)', color: paperMode ? '#15803d' : '#5cb85c', items: dg.activeItems }
+            ? { title: 'Active Coverage (≥20 refs)', color: paperMode ? '#15803d' : '#5cb85c', items: dg.activeItems }
             : d.bucket === 'marginal'
               ? { title: 'Marginal / Trace (1–19 refs)', color: paperMode ? '#b45309' : '#f0ad4e', items: dg.marginalItems }
               : { title: 'Absolute Blind Spots (0 refs)', color: paperMode ? '#dc2626' : '#ff6b6b', items: dg.zeroItems }
@@ -1787,11 +1779,11 @@ const exportHorizonForPrint = () => {
   const granLabel = absentGranularity.value === 'subfields' ? 'Subfields (252)' : 'Fields (26)'
   exportEChartForPrint({
     option,
-    filename: `incose_epistemic_horizon_${absentGranularity.value}_300dpi.png`,
+    filename: `incose_disciplinary_coverage_${absentGranularity.value}_300dpi.png`,
     width: 1100,
     height: 400,
     pixelRatio: 3,
-    title: `INCOSE Epistemic Horizon Coverage by Domain — Canonical OpenAlex ${granLabel}`,
+    title: `INCOSE Disciplinary Coverage by Domain — Canonical OpenAlex ${granLabel}`,
     subtitle: getActiveScopeSubtitle()
   })
 }

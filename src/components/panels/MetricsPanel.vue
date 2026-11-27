@@ -26,8 +26,8 @@
     <!-- Echo Chambers / Insularity -->
     <div class="analytics-section">
       <h3 class="section-title collapsible-header" @click="isEchoChambersOpen = !isEchoChambersOpen">
-        Core Echo Chambers
-        <span class="help-icon" title="Uses Label Propagation to find isolated cliques within INCOSE. 'Insularity' is the percentage of a clique's outgoing citations that point to its own members. High insularity = orthodoxy. Max Size filters out the 'monster component'.">?</span>
+        Citation Clusters (Insularity)
+        <HelpTip term="citationClusters" />
         <span class="toggle-icon">{{ isEchoChambersOpen ? '▼' : '▶' }}</span>
       </h3>
       
@@ -101,7 +101,7 @@
         </div>
 
         <div v-if="store.echoChambers.length === 0" class="empty-list-notice">
-          No highly insular cliques found.
+          No citation clusters match the current thresholds.
         </div>
         <ul v-else class="top-list echo-list" style="max-height: 200px; overflow-y: auto;">
           <li 
@@ -122,7 +122,7 @@
               
               <!-- Epistemic Diet (Top 2 external OpenAlex Fields) -->
               <div class="diet-row" v-if="chamber.topExternalFields && chamber.topExternalFields.length > 0">
-                <span class="diet-label">Diet:</span>
+                <span class="diet-label">Profile:</span>
                 <span class="diet-tag" v-for="f in chamber.topExternalFields" :key="f.name">{{ f.name }} {{ f.pct }}%</span>
               </div>
               <div class="diet-row" v-else-if="chamber.totalEnvOut === 0">
@@ -252,6 +252,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useGraphStore } from '../../store/graphStore.js'
 import SearchPanel from './SearchPanel.vue'
 import DiffusionPanel from './DiffusionPanel.vue'
+import HelpTip from '../common/HelpTip.vue'
 
 const store = useGraphStore()
 const isFilterCategoriesOpen = ref(false)

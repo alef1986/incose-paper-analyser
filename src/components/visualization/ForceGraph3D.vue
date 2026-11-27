@@ -14,16 +14,64 @@
       }"
     ></div>
 
-    <!-- НОВАЯ ЛЕГЕНДА: Показывается только в развернутом виде -->
+    <!-- Back to Macro Map floating pill when focused on a node or cluster -->
+    <button
+      v-if="store.mainView === 'graph' && store.isLoaded && store.isVizActive && (store.focusedNodeId || store.focusedClique) && store.vizSettings.globalViewMode === 'macro'"
+      type="button"
+      class="back-to-macro-btn"
+      @click="returnToMacroMap"
+      title="Return to the 3D Macro Landscape Map (Disciplines × Top Translators)"
+    >
+      ← Back to Macro Map
+    </button>
+
+    <!-- 3D Viewport Quick Actions (Fit Optimal Angle & Export Labeled PNG) -->
+    <div
+      v-if="store.mainView === 'graph' && store.isLoaded && store.isVizActive"
+      class="viewport-3d-tools"
+    >
+      <button
+        type="button"
+        class="tool-3d-btn"
+        @click="fitOptimalView"
+        title="Auto-align camera along optimal plane of spread and fit all nodes to screen"
+      >
+        ⌖ Fit View
+      </button>
+      <button
+        type="button"
+        class="tool-3d-btn export-3d-btn"
+        @click="export3DPng"
+        title="Export high-resolution 3D PNG with smart non-overlapping node labels and legend"
+      >
+        📷 PNG
+      </button>
+    </div>
+
+    <!-- Контекстная легенда -->
     <div class="viewport-legend" v-if="store.mainView === 'graph' && store.graphModel">
-      <h4 class="legend-title">{{ store.focusedClique ? 'Clique Taxonomy' : 'Graph Taxonomy' }}</h4>
+      <h4 class="legend-title">
+        {{ store.focusedClique
+            ? 'Cluster Subgraph'
+            : (isMacroMode ? 'Macro Landscape (Disciplines × Translators)' : 'Graph Taxonomy') }}
+      </h4>
       <template v-if="store.focusedClique">
         <div class="legend-item">
           <span class="color-dot clique-member"></span> 
-          {{ store.vizSettings.collapseCliqueSuperNode ? 'Clique Super-Node' : 'Clique Member' }}
+          {{ store.vizSettings.collapseCliqueSuperNode ? 'Cluster Super-Node' : 'Cluster Member' }}
         </div>
         <div class="legend-item"><span class="color-dot incose"></span> Other Core</div>
         <div class="legend-item"><span class="color-dot target"></span> Environment</div>
+      </template>
+      <template v-else-if="isMacroMode">
+        <div class="legend-item"><span class="crystal-icon">◆</span> Domain Translator (INCOSE Core Crystal)</div>
+        <div class="legend-item"><span class="color-dot dom-physical"></span> Physical Sciences (Sphere)</div>
+        <div class="legend-item"><span class="color-dot dom-social"></span> Social Sciences (Sphere)</div>
+        <div class="legend-item"><span class="color-dot dom-life"></span> Life Sciences (Sphere)</div>
+        <div class="legend-item"><span class="color-dot dom-health"></span> Health Sciences (Sphere)</div>
+        <div class="legend-flow-note">
+          Click a Discipline sphere to filter • Click a Cyan crystal to inspect its 3-Tier Translation Flow
+        </div>
       </template>
       <template v-else>
         <div class="legend-item"><span class="color-dot incose"></span> Core (INCOSE)</div>
@@ -38,10 +86,29 @@
     </div>
 
     <div v-if="tooltip.node && store.vizSettings.enableTooltip" class="custom-tooltip" :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }" @mouseenter="isHoveringTooltip = true" @mouseleave="hideTooltip">
-      <div class="tt-title">{{ tooltip.node.title }}</div>
-      <div class="tt-meta"><b>Author:</b> {{ formatAuthors(tooltip.node.authors) }}</div>
-      <div class="tt-meta"><b>Source:</b> {{ getSourceName(tooltip.node.issns) }}</div>
-      <a v-if="tooltip.node.type !== 'clique_supernode'" class="tt-link" @click.prevent="openCard(tooltip.node.id)">Open Card &rarr;</a>
+      <template v-if="tooltip.node.type === 'discipline_supernode'">
+        <div class="tt-title">{{ tooltip.node.title }}</div>
+        <div class="tt-meta"><b>Domain:</b> {{ tooltip.node.domain }}</div>
+        <div class="tt-meta"><b>Imports:</b> {{ (tooltip.node.totalCitations || 0).toLocaleString() }} citations ({{ tooltip.node.uniqueWorks || 0 }} unique works)</div>
+        <div class="tt-meta"><b>Translators:</b> {{ tooltip.node.translatorCount || 0 }} bridge papers</div>
+        <a class="tt-link" @click.prevent="filterByDisciplineNode(tooltip.node)">Filter Dashboard by Discipline &rarr;</a>
+      </template>
+      <template v-else-if="tooltip.node.type === 'macro_translator'">
+        <div class="tt-title">{{ tooltip.node.title }}</div>
+        <div class="tt-meta"><b>Author:</b> {{ formatAuthors(tooltip.node.authors) }} ({{ tooltip.node.publicationYear || 'N/A' }})</div>
+        <div class="tt-meta"><b>Bridge Metrics:</b> Env Out: {{ tooltip.node.eOut }} · Indep. Core In: {{ tooltip.node.cInIndep }}</div>
+        <div class="tt-meta" v-if="tooltip.node.topField"><b>Primary Channel:</b> {{ tooltip.node.topField }}</div>
+        <div class="tt-actions-row">
+          <a class="tt-link" @click.prevent="inspectTranslatorFlow(tooltip.node.id)">3-Tier Flow &rarr;</a>
+          <a class="tt-link tt-link-secondary" @click.prevent="openCard(tooltip.node.id)">Open Card</a>
+        </div>
+      </template>
+      <template v-else>
+        <div class="tt-title">{{ tooltip.node.title }}</div>
+        <div class="tt-meta"><b>Author:</b> {{ formatAuthors(tooltip.node.authors) }}</div>
+        <div class="tt-meta"><b>Source:</b> {{ getSourceName(tooltip.node.issns) }}</div>
+        <a v-if="tooltip.node.type !== 'clique_supernode'" class="tt-link" @click.prevent="openCard(tooltip.node.id)">Open Card &rarr;</a>
+      </template>
     </div>
 
     <!-- WARNING OVERLAY FOR TOO MANY NODES -->
@@ -64,7 +131,9 @@
 <script setup>
 import { ref, reactive, computed, watch, onBeforeUnmount, onMounted, nextTick } from 'vue'
 import ForceGraph3D from '3d-force-graph'
+import * as THREE from 'three'
 import { useGraphStore, issnMap } from '../../store/graphStore.js'
+import { getCanonicalDomainColor } from '../../utils/domainColors.js'
 
 const store = useGraphStore()
 const graphContainer = ref(null)
@@ -102,7 +171,391 @@ const getSourceName = (issns) => {
 const openCard = (id) => { store.openModal(id); hideTooltip() }
 const hideTooltip = () => { isHoveringTooltip.value = false; tooltip.value.node = null }
 
+let pendingAutoFit = false
+let translatorCrystalGeo = null
+let translatorCrystalMat = null
+
+const getTranslatorCrystalMesh = (node) => {
+  if (!translatorCrystalGeo) {
+    translatorCrystalGeo = new THREE.OctahedronGeometry(1, 0)
+  }
+  if (!translatorCrystalMat) {
+    translatorCrystalMat = new THREE.MeshLambertMaterial({
+      color: '#00bfff',
+      emissive: '#006699',
+      emissiveIntensity: 0.45,
+      transparent: true,
+      opacity: 0.96
+    })
+  }
+  const r = Math.cbrt(getNodeSize(node)) * 4.4
+  const mesh = new THREE.Mesh(translatorCrystalGeo, translatorCrystalMat)
+  mesh.scale.set(r, r * 1.28, r)
+  return mesh
+}
+
+const isMacroMode = computed(() => {
+  return !store.focusedNodeId && !store.focusedClique && store.vizSettings.globalViewMode === 'macro'
+})
+
+const returnToMacroMap = () => {
+  store.focusedNodeId = null
+  store.focusedClique = null
+  hideTooltip()
+}
+
+const filterByDisciplineNode = (node) => {
+  if (!node || !node.pathString) return
+  store.setTaxonomyFilter(node.level || 'field', node.title, node.pathString)
+  hideTooltip()
+}
+
+const inspectTranslatorFlow = (nodeId) => {
+  store.vizSettings.layoutMode = 'translationFlow'
+  store.setFocusedNode(nodeId)
+  hideTooltip()
+}
+
+/**
+ * Computes the unit eigenvector corresponding to the smallest eigenvalue of a 3x3
+ * symmetric covariance matrix via Jacobi rotations. Looking along this normal
+ * projects the 3D cloud onto its 2D plane of maximum spread (minimizing overlap).
+ */
+const findSmallestEigenvector3x3 = (m) => {
+  const a = [
+    [m[0][0], m[0][1], m[0][2]],
+    [m[1][0], m[1][1], m[1][2]],
+    [m[2][0], m[2][1], m[2][2]]
+  ]
+  const v = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1]
+  ]
+
+  for (let iter = 0; iter < 24; iter++) {
+    let p = 0, q = 1
+    let maxOff = Math.abs(a[0][1])
+    if (Math.abs(a[0][2]) > maxOff) { maxOff = Math.abs(a[0][2]); p = 0; q = 2 }
+    if (Math.abs(a[1][2]) > maxOff) { maxOff = Math.abs(a[1][2]); p = 1; q = 2 }
+    if (maxOff < 1e-8) break
+
+    const app = a[p][p], aqq = a[q][q], apq = a[p][q]
+    const tau = (aqq - app) / (2 * apq)
+    const t = tau >= 0 ? 1 / (tau + Math.sqrt(1 + tau * tau)) : -1 / (-tau + Math.sqrt(1 + tau * tau))
+    const c = 1 / Math.sqrt(1 + t * t)
+    const s = t * c
+
+    a[p][p] = app - t * apq
+    a[q][q] = aqq + t * apq
+    a[p][q] = 0
+    a[q][p] = 0
+
+    for (let r = 0; r < 3; r++) {
+      if (r !== p && r !== q) {
+        const arp = a[r][p], arq = a[r][q]
+        a[r][p] = a[p][r] = c * arp - s * arq
+        a[r][q] = a[q][r] = s * arp + c * arq
+      }
+      const vrp = v[r][p], vrq = v[r][q]
+      v[r][p] = c * vrp - s * vrq
+      v[r][q] = s * vrp + c * vrq
+    }
+  }
+
+  let minIdx = 0
+  if (a[1][1] < a[minIdx][minIdx]) minIdx = 1
+  if (a[2][2] < a[minIdx][minIdx]) minIdx = 2
+
+  const nx = v[0][minIdx], ny = v[1][minIdx], nz = v[2][minIdx]
+  const len = Math.hypot(nx, ny, nz) || 1
+  return { x: nx / len, y: ny / len, z: nz / len }
+}
+
+const fitOptimalView = () => {
+  if (!Graph) return
+  const gData = Graph.graphData()
+  const nodes = (gData?.nodes || []).filter(
+    n => Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
+  )
+  if (nodes.length === 0) {
+    Graph.zoomToFit(450, 60)
+    return
+  }
+
+  // For 3-Tier Translation Flow, face the X-Y plane head-on so Left -> Center -> Right reads cleanly
+  if (store.focusedNodeId && store.vizSettings.layoutMode === 'translationFlow') {
+    Graph.cameraPosition({ x: 0, y: 0, z: 520 }, { x: 0, y: 0, z: 0 }, 500)
+    setTimeout(() => {
+      if (Graph) Graph.zoomToFit(400, 60)
+    }, 520)
+    return
+  }
+
+  // Compute centroid
+  let cx = 0, cy = 0, cz = 0
+  nodes.forEach(n => { cx += n.x; cy += n.y; cz += n.z })
+  cx /= nodes.length
+  cy /= nodes.length
+  cz /= nodes.length
+
+  // Compute 3x3 covariance matrix and bounding radius
+  let cxx = 0, cxy = 0, cxz = 0, cyy = 0, cyz = 0, czz = 0
+  let maxR = 0
+  nodes.forEach(n => {
+    const dx = n.x - cx, dy = n.y - cy, dz = n.z - cz
+    cxx += dx * dx; cxy += dx * dy; cxz += dx * dz
+    cyy += dy * dy; cyz += dy * dz; czz += dz * dz
+    const r = Math.hypot(dx, dy, dz)
+    if (r > maxR) maxR = r
+  })
+
+  const normal = findSmallestEigenvector3x3([
+    [cxx, cxy, cxz],
+    [cxy, cyy, cyz],
+    [cxz, cyz, czz]
+  ])
+
+  // Prefer positive Z hemisphere for natural orientation
+  const sign = normal.z < 0 ? -1 : 1
+  const dist = Math.max(180, maxR * 2.5)
+  Graph.cameraPosition(
+    { x: cx + normal.x * sign * dist, y: cy + normal.y * sign * dist, z: cz + normal.z * sign * dist },
+    { x: cx, y: cy, z: cz },
+    500
+  )
+
+  setTimeout(() => {
+    if (Graph) {
+      Graph.zoomToFit(450, 65)
+      const controls = Graph.controls()
+      if (controls) {
+        if (typeof controls.handleResize === 'function') controls.handleResize()
+        if (typeof controls.update === 'function') controls.update()
+      }
+    }
+  }, 540)
+}
+
+const formatShortLabel = (node) => {
+  if (!node) return ''
+  if (node.type === 'discipline_supernode') {
+    const t = node.title || ''
+    return t.length > 26 ? t.substring(0, 24) + '…' : t
+  }
+  const auth = formatAuthors(node.authors)
+  const yr = node.publicationYear || node.year || ''
+  if (auth && auth !== 'Unknown') {
+    const firstPart = auth.split(',')[0].replace(/\s+et al\.$/, ' et al.')
+    return yr ? `${firstPart} (${yr})` : firstPart
+  }
+  const t = node.title || ''
+  return t.length > 24 ? t.substring(0, 22) + '…' : t
+}
+
+const export3DPng = () => {
+  if (!Graph) return
+  const renderer = Graph.renderer()
+  const scene = Graph.scene()
+  const camera = Graph.camera()
+  if (!renderer || !scene || !camera) return
+
+  // Force a fresh WebGL frame right before reading the drawing buffer
+  renderer.render(scene, camera)
+  const srcCanvas = renderer.domElement
+  const logicalW = srcCanvas.clientWidth || srcCanvas.width || 1200
+  const logicalH = srcCanvas.clientHeight || srcCanvas.height || 800
+  const scale = 2
+
+  const outCanvas = document.createElement('canvas')
+  outCanvas.width = logicalW * scale
+  outCanvas.height = logicalH * scale
+  const ctx = outCanvas.getContext('2d')
+  if (!ctx) return
+
+  ctx.scale(scale, scale)
+
+  // 1. Background & WebGL scene capture
+  ctx.fillStyle = '#050508'
+  ctx.fillRect(0, 0, logicalW, logicalH)
+  ctx.drawImage(srcCanvas, 0, 0, logicalW, logicalH)
+
+  // 2. Project key nodes to 2D screen space and draw non-overlapping labels
+  const gData = Graph.graphData()
+  const allNodes = (gData?.nodes || []).filter(
+    n => Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
+  )
+
+  let labelCandidates = []
+  if (isMacroMode.value) {
+    const planets = allNodes
+      .filter(n => n.type === 'discipline_supernode')
+      .sort((a, b) => (b.totalCitations || 0) - (a.totalCitations || 0))
+      .map(n => ({ node: n, priority: 1, color: getCanonicalDomainColor(n.domain), bold: true }))
+
+    const translators = allNodes
+      .filter(n => n.type === 'macro_translator')
+      .sort((a, b) => (b.synergy || b.cInIndep || 0) - (a.synergy || a.cInIndep || 0))
+      .slice(0, 12)
+      .map(n => ({ node: n, priority: 2, color: '#7dd3fc', bold: false }))
+
+    labelCandidates = [...planets, ...translators]
+  } else if (store.focusedClique) {
+    const superN = allNodes.filter(n => n.type === 'clique_supernode')
+      .map(n => ({ node: n, priority: 1, color: '#d8b4fe', bold: true }))
+    const rest = allNodes
+      .filter(n => n.type !== 'clique_supernode')
+      .sort((a, b) => (b.inDegree || 0) - (a.inDegree || 0))
+      .slice(0, 16)
+      .map(n => ({ node: n, priority: 2, color: '#e2e8f0', bold: false }))
+    labelCandidates = [...superN, ...rest]
+  } else {
+    const focal = allNodes
+      .filter(n => n.id === store.focusedNodeId)
+      .map(n => ({ node: n, priority: 1, color: '#ffaa00', bold: true }))
+    const neighbors = allNodes
+      .filter(n => n.id !== store.focusedNodeId && !isExcludedByFilter(n))
+      .sort((a, b) => (b.inDegree || 0) - (a.inDegree || 0))
+      .slice(0, 18)
+      .map(n => ({
+        node: n,
+        priority: 2,
+        color: n.type === 'incose_source' ? '#7dd3fc' : (n.type === 'assimilated_canon' ? '#86efac' : '#cbd5e1'),
+        bold: false
+      }))
+    labelCandidates = [...focal, ...neighbors]
+  }
+
+  const placedBoxes = []
+  const overlaps = (box) =>
+    placedBoxes.some(
+      b => !(box.x + box.w < b.x || box.x > b.x + b.w || box.y + box.h < b.y || box.y > b.y + b.h)
+    )
+
+  const vec = new THREE.Vector3()
+  labelCandidates.forEach(({ node, color, bold }) => {
+    vec.set(node.x, node.y, node.z).project(camera)
+    if (vec.z < -1 || vec.z > 1) return
+    const sx = (vec.x * 0.5 + 0.5) * logicalW
+    const sy = (-vec.y * 0.5 + 0.5) * logicalH
+    if (sx < 24 || sx > logicalW - 24 || sy < 54 || sy > logicalH - 36) return
+
+    const text = formatShortLabel(node)
+    if (!text) return
+
+    ctx.font = `${bold ? 'bold ' : ''}${bold ? 11.5 : 10}px "Segoe UI", Arial, sans-serif`
+    const metrics = ctx.measureText(text)
+    const padX = 5
+    const boxW = metrics.width + padX * 2
+    const boxH = bold ? 18 : 16
+    const bx = sx - boxW / 2
+    const by = sy - boxH - 8
+
+    const box = { x: bx - 3, y: by - 3, w: boxW + 6, h: boxH + 6 }
+    if (overlaps(box)) return
+    placedBoxes.push(box)
+
+    // Pill backdrop for legibility
+    ctx.fillStyle = 'rgba(10, 12, 22, 0.78)'
+    ctx.strokeStyle = bold ? color : 'rgba(255, 255, 255, 0.22)'
+    ctx.lineWidth = bold ? 1 : 0.7
+    ctx.beginPath()
+    ctx.roundRect(bx, by, boxW, boxH, 3)
+    ctx.fill()
+    ctx.stroke()
+
+    ctx.fillStyle = color
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, sx, by + boxH / 2)
+  })
+
+  // 3. Title & Scope Banner (top-left)
+  const modeTitle = store.focusedClique
+    ? `INCOSE Citation Cluster Subgraph (${store.focusedClique.size} papers)`
+    : isMacroMode.value
+      ? `INCOSE 3D Macro Landscape (Disciplines × Top Translators)`
+      : store.focusedNodeId
+        ? `INCOSE Ego / Translation Flow Network`
+        : `INCOSE 3D Citation Network`
+
+  const journals = store.longitudinalScopeSummary?.selectedJournalLabels?.join(', ') || 'All Journals'
+  const tax = store.longitudinalScopeSummary?.taxonomyLabel || 'All External Domains'
+  const subText = `Journals: ${journals}  |  Taxonomy: ${tax}${store.translatorLensActive ? '  |  Translator Lens ON' : ''}`
+
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  ctx.fillStyle = 'rgba(10, 12, 22, 0.82)'
+  ctx.fillRect(16, 14, Math.min(logicalW - 32, 620), 44)
+  ctx.strokeStyle = 'rgba(0, 191, 255, 0.45)'
+  ctx.lineWidth = 1
+  ctx.strokeRect(16, 14, Math.min(logicalW - 32, 620), 44)
+
+  ctx.fillStyle = '#ffffff'
+  ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif'
+  ctx.fillText(modeTitle, 26, 21)
+  ctx.fillStyle = '#94a3b8'
+  ctx.font = '10px "Segoe UI", Arial, sans-serif'
+  ctx.fillText(subText, 26, 39)
+
+  // 4. Compact Legend (bottom-left)
+  const legendItems = isMacroMode.value
+    ? [
+        { label: 'Domain Translator (INCOSE Crystal)', color: '#00bfff', shape: 'diamond' },
+        { label: 'Physical Sciences', color: '#5b7cfa', shape: 'dot' },
+        { label: 'Social Sciences', color: '#f59e0b', shape: 'dot' },
+        { label: 'Life Sciences', color: '#14b8a6', shape: 'dot' },
+        { label: 'Health Sciences', color: '#f43f5e', shape: 'dot' }
+      ]
+    : [
+        { label: 'Core (INCOSE)', color: '#00bfff', shape: 'dot' },
+        { label: 'Assimilated Canon', color: '#5cb85c', shape: 'dot' },
+        { label: 'External Environment', color: '#64748b', shape: 'dot' },
+        { label: 'Focal Node', color: '#ffaa00', shape: 'dot' }
+      ]
+
+  const legW = 225
+  const legH = 18 + legendItems.length * 16
+  const legX = 16
+  const legY = logicalH - legH - 16
+  ctx.fillStyle = 'rgba(10, 12, 22, 0.85)'
+  ctx.fillRect(legX, legY, legW, legH)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)'
+  ctx.strokeRect(legX, legY, legW, legH)
+
+  legendItems.forEach((item, idx) => {
+    const iy = legY + 12 + idx * 16
+    ctx.fillStyle = item.color
+    if (item.shape === 'diamond') {
+      ctx.font = 'bold 11px "Segoe UI", Arial, sans-serif'
+      ctx.fillText('◆', legX + 10, iy - 1)
+    } else {
+      ctx.beginPath()
+      ctx.arc(legX + 14, iy + 5, 4, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#cbd5e1'
+    ctx.font = '10px "Segoe UI", Arial, sans-serif'
+    ctx.fillText(item.label, legX + 26, iy)
+  })
+
+  // 5. Trigger download
+  const suffix = store.focusedClique ? 'cluster' : (isMacroMode.value ? 'macro_landscape' : 'ego_network')
+  const a = document.createElement('a')
+  a.href = outCanvas.toDataURL('image/png')
+  a.download = `incose_3d_${suffix}_hq.png`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 const getNodeSize = (node) => {
+  if (node.type === 'discipline_supernode') {
+    return Math.max(7, Math.min(28, Math.sqrt(node.totalCitations || 20) * 0.42 + 4))
+  }
+  if (node.type === 'macro_translator') {
+    return Math.max(2.5, Math.min(9, Math.sqrt((node.cInIndep || 1) + 1) * 1.15))
+  }
   if (node.type === 'clique_supernode') {
     return Math.max(8, Math.sqrt(node.memberCount || 10) * 3.5)
   }
@@ -290,8 +743,8 @@ watch(() => excludedNodeIds.value, (newSet) => {
     Graph.linkColor(Graph.linkColor())
     Graph.linkWidth(Graph.linkWidth())
     Graph.linkDirectionalParticles(link => getLinkParticles(link))
-    Graph.linkDirectionalParticleWidth(link => isLinkExcluded(link) ? 0.45 : 1.3)
-    Graph.linkDirectionalParticleColor(link => isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00')
+    Graph.linkDirectionalParticleWidth(link => link.isMacroLink ? 0.9 : (isLinkExcluded(link) ? 0.45 : 1.3))
+    Graph.linkDirectionalParticleColor(link => link.isMacroLink ? '#e2e8f0' : (isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00'))
   }
 }, { immediate: true })
 
@@ -329,6 +782,13 @@ const convertToRGBA = (hex, alpha) => {
 }
 
 const getNodeColor = (node) => {
+  if (node.type === 'discipline_supernode') {
+    const col = getCanonicalDomainColor(node.domain)
+    return convertToRGBA(col, 0.94)
+  }
+  if (node.type === 'macro_translator') {
+    return convertToRGBA('#00bfff', 0.96)
+  }
   if (node.type === 'clique_supernode') {
     return convertToRGBA('#9b59b6', 0.95)
   }
@@ -360,6 +820,7 @@ const getNodeColor = (node) => {
 
 const getLinkParticles = (link) => {
   if (!store.vizSettings.enableParticles) return 0
+  if (link.isMacroLink) return Math.min(3, Math.max(1, Math.round(Math.log2(1 + (link.weight || 1)))))
   if (store.focusedClique) return Math.min(4, link.weight || 2)
   if (store.focusedNodeId && store.vizSettings.layoutMode === 'translationFlow') {
     return isLinkExcluded(link) ? 1 : 3
@@ -377,6 +838,12 @@ const initGraph = () => {
     .width(width)
     .height(height)
     .nodeColor(getNodeColor)
+    .nodeThreeObject(node => {
+      if (node.type === 'macro_translator') {
+        return getTranslatorCrystalMesh(node)
+      }
+      return false
+    })
     .nodeVal(node => {
       const nodeSize = getNodeSize(node)
       const size = node.id === store.focusedNodeId ? nodeSize * 1.5 : nodeSize
@@ -410,6 +877,9 @@ const initGraph = () => {
     })
     .linkOpacity(0.6)
     .linkWidth(link => {
+      if (link.isMacroLink) {
+        return Math.min(1.6, 0.25 + Math.log2(1 + (link.weight || 1)) * 0.35)
+      }
       if (store.focusedNodeId) {
         const years = store.activeFilters.years
         const taxonomy = store.activeFilters.taxonomy
@@ -429,8 +899,23 @@ const initGraph = () => {
     .linkDirectionalParticleResolution(8)
     .onNodeClick(node => {
       if (node.type === 'clique_supernode') return
+      if (node.type === 'discipline_supernode') {
+        filterByDisciplineNode(node)
+        return
+      }
+      if (node.type === 'macro_translator') {
+        inspectTranslatorFlow(node.id)
+        return
+      }
       store.setFocusedNode(node.id)
       hideTooltip()
+    })
+    .cooldownTicks(100)
+    .onEngineStop(() => {
+      if (pendingAutoFit && Graph) {
+        pendingAutoFit = false
+        Graph.zoomToFit(500, 60)
+      }
     })
     .onNodeHover(node => {
       if (!store.vizSettings.enableTooltip) return
@@ -694,6 +1179,9 @@ const proceedWithGraphData = (data) => {
         return 0.1;
       });
     }
+  } else if (isMacroMode.value) {
+    Graph.d3Force('charge').strength(node => node.type === 'discipline_supernode' ? -130 : -35)
+    Graph.d3Force('link').distance(link => Math.max(32, 68 - Math.log2(1 + (link.weight || 1)) * 10)).strength(0.45)
   } else {
     // Reset to defaults
     if (defaultChargeForce) Graph.d3Force('charge', defaultChargeForce);
@@ -701,8 +1189,8 @@ const proceedWithGraphData = (data) => {
   }
 
   Graph.linkDirectionalParticles(link => getLinkParticles(link))
-  Graph.linkDirectionalParticleWidth(link => isLinkExcluded(link) ? 0.45 : 1.3)
-  Graph.linkDirectionalParticleColor(link => isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00')
+  Graph.linkDirectionalParticleWidth(link => link.isMacroLink ? 0.9 : (isLinkExcluded(link) ? 0.45 : 1.3))
+  Graph.linkDirectionalParticleColor(link => link.isMacroLink ? '#e2e8f0' : (isLinkExcluded(link) ? convertToRGBA('#444455', 0.15) : '#ffaa00'))
   if (store.isVizActive) {
     Graph.resumeAnimation()
   }
@@ -713,17 +1201,18 @@ const proceedWithGraphData = (data) => {
   Graph.linkColor(Graph.linkColor())
   Graph.linkWidth(Graph.linkWidth())
 
-  // Центрируем камеру при изменении фокусного узла или настроек графа
+  // Центрируем камеру: быстрый первичный fit + финальный fit после стабилизации физики
+  pendingAutoFit = true
   setTimeout(() => {
     if (Graph) {
-      Graph.zoomToFit(400, 150)
+      Graph.zoomToFit(400, 70)
       const controls = Graph.controls()
       if (controls) {
         if (typeof controls.handleResize === 'function') controls.handleResize()
         if (typeof controls.update === 'function') controls.update()
       }
     }
-  }, 150)
+  }, 450)
 }
 
 const onContinueRendering = () => {
@@ -786,8 +1275,14 @@ const updateGraphData = () => {
   } else if (store.focusedNodeId) {
     // 1. Если выбран узел в Top Hubs, то к окружению должен применяться фильтр года выхода и отраслей.
     data = store.graphModel.getEgoNetwork(store.focusedNodeId, store, store.vizSettings)
+  } else if (store.vizSettings.globalViewMode === 'macro') {
+    const macro = store.macroLandscapeGraph
+    data = {
+      nodes: macro.nodes.map(n => ({ ...n })),
+      links: macro.links.map(l => ({ ...l }))
+    }
   } else {
-    // 2. Если узел не выбран, то нужно рисовать новый 3d граф.
+    // Raw global subgraph mode
     data = store.graphModel.getFilteredGlobalNetwork(store.filteredCoreNodes, store, store.vizSettings)
   }
 
@@ -830,8 +1325,12 @@ watch([
   () => store.focusedClique,
   () => store.vizSettings,
   () => store.vizSettings.layoutMode,
+  () => store.vizSettings.globalViewMode,
+  () => store.vizSettings.macroGranularity,
+  () => store.translatorScoringMode,
   () => store.vizSettings.collapseCliqueSuperNode,
   () => store.vizSettings.enableParticles,
+  () => store.metrics,
   () => store.selectedISSNs,
   () => store.displayFilters,
   () => store.isVizActive,
@@ -893,6 +1392,14 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener('resize', handleWindowResize)
   stopPipObserver()
+  if (translatorCrystalGeo) {
+    translatorCrystalGeo.dispose()
+    translatorCrystalGeo = null
+  }
+  if (translatorCrystalMat) {
+    translatorCrystalMat.dispose()
+    translatorCrystalMat = null
+  }
   if (Graph) Graph._destructor()
 })
 </script>
@@ -1044,4 +1551,105 @@ onBeforeUnmount(() => {
   line-height: 1.4;
   max-width: 260px;
 }
+
+.back-to-macro-btn {
+  position: fixed;
+  top: 124px;
+  left: 374px;
+  z-index: 25;
+  padding: 6px 12px;
+  background: rgba(15, 17, 28, 0.9);
+  border: 1px solid #00bfff;
+  border-radius: 20px;
+  color: #00bfff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 4px 14px rgba(0, 191, 255, 0.2);
+  backdrop-filter: blur(6px);
+  transition: all 0.2s ease;
+}
+
+.back-to-macro-btn:hover {
+  background: #00bfff;
+  color: #050510;
+}
+
+.color-dot.dom-physical { background: #5b7cfa; }
+.color-dot.dom-social { background: #f59e0b; }
+.color-dot.dom-life { background: #14b8a6; }
+.color-dot.dom-health { background: #f43f5e; }
+.crystal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin-right: 9px;
+  color: #00bfff;
+  font-size: 13px;
+  line-height: 1;
+  text-shadow: 0 0 7px rgba(0, 191, 255, 0.8);
+}
+
+.tt-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.tt-link-secondary {
+  color: #aaa !important;
+}
+
+.tt-link-secondary:hover {
+  color: #fff !important;
+}
+
+
+.viewport-3d-tools {
+  position: fixed;
+  top: 124px;
+  right: 374px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.tool-3d-btn {
+  padding: 5px 10px;
+  background: rgba(15, 17, 28, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 18px;
+  color: #ddd;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.tool-3d-btn:hover {
+  background: rgba(0, 191, 255, 0.22);
+  border-color: #00bfff;
+  color: #fff;
+}
+
+.tool-3d-btn.export-3d-btn {
+  border-color: rgba(92, 184, 92, 0.5);
+  color: #86efac;
+}
+
+.tool-3d-btn.export-3d-btn:hover {
+  background: #5cb85c;
+  border-color: #5cb85c;
+  color: #050510;
+}
+
 </style>

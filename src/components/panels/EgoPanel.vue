@@ -21,19 +21,19 @@
         <label class="setting-item checkbox-label">
           <input type="checkbox" v-model="store.citationFrequencyFilter" @change="store.recalculateMetrics" />
           Citation Frequency
-          <span class="help-icon" title="Filters communicative noise. Repeated citations mark the threshold of 'Meaning Condensation' (Kondensation), turning isolated events into recognizable systemic forms.">?</span>
+          <HelpTip term="citationFrequency" />
         </label>
         <label class="setting-item checkbox-label">
           <input type="checkbox" v-model="store.uniqueAuthorsFilter" @change="store.recalculateMetrics" />
           Unique Authors
-          <span class="help-icon" title="Decouples psychic systems from the social system. Validates 'Supra-individual Autopoietic Reception' by ensuring concepts are cited by disjoint author groups, not just one repeating team.">?</span>
+          <HelpTip term="uniqueAuthors" />
         </label>
 
         <div class="setting-group" style="padding-top: 5px; margin-top: 5px;">
           <label class="setting-item checkbox-label">
             <input type="checkbox" v-model="store.activeYearsFilterActive" @change="store.recalculateMetrics" />
             Active Years Count
-            <span class="help-icon" title="Filters transient academic fashion/hype. Ensures the external concept survived 'Evolutionary Restabilisation' by being actively referenced across multiple distinct years.">?</span>
+            <HelpTip term="activeYears" />
           </label>
           <div v-show="store.activeYearsFilterActive" class="slider-container" style="padding-left: 20px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 11px; color: #aaa;">
@@ -57,7 +57,7 @@
           <label class="setting-item checkbox-label">
             <input type="checkbox" v-model="store.lifespanFilterActive" @change="store.recalculateMetrics" />
             Lifespan
-            <span class="help-icon" title="Measures structural durability. High lifespan indicates deep assimilation into systemic memory. Apply to Canon to detect systemic amnesia (structural forgetting).">?</span>
+            <HelpTip term="lifespan" />
           </label>
           <div v-show="store.lifespanFilterActive" class="slider-container" style="padding-left: 20px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 11px; color: #aaa;">
@@ -79,7 +79,17 @@
         </div>
 
         <div class="setting-group" style="padding-top: 5px; margin-top: 5px;">
-          <label class="setting-item checkbox-label" style="color: #ffaa00; font-weight: bold;"><input type="checkbox" v-model="store.translatorLensActive" @change="store.recalculateMetrics" /> Translator Lens (Realized Environment)<span class="help-icon" title="Filters out unresonated noise. Shows ONLY external disciplines and citations that were imported by 'True Translators' (Core papers with high external references AND high internal INCOSE citations).">?</span></label>
+          <label class="setting-item checkbox-label" style="color: #ffaa00; font-weight: bold;"><input type="checkbox" v-model="store.translatorLensActive" @change="store.recalculateMetrics" /> Translator Lens (Realized Environment)<HelpTip term="translatorLens" /></label>
+          <label class="setting-item" style="margin-top: 6px; padding-left: 4px;">
+            <span class="s-label" style="display: flex; align-items: center;">
+              Translator Scoring Formula
+              <HelpTip term="translatorScoring" />
+            </span>
+            <select v-model="store.translatorScoringMode" class="s-select">
+              <option value="impact">Resonance: Indep. In × log₂(1 + Env)</option>
+              <option value="harmonic">Harmonic Balance (F1): 2·Env·In / (Env+In)</option>
+            </select>
+          </label>
         </div>
       </div>
     </div>
@@ -94,6 +104,22 @@
       <div v-show="isVizSettingsOpen" class="collapsible-content">
         <label class="setting-item checkbox-label">
           <input type="checkbox" v-model="store.vizSettings.enableTooltip" /> Show Node Tooltips
+        </label>
+
+        <label class="setting-item">
+          <span class="s-label">Default 3D View (No Node Selected):</span>
+          <select v-model="store.vizSettings.globalViewMode" class="s-select">
+            <option value="macro">Macro Landscape (Disciplines × Translators)</option>
+            <option value="raw">Raw Global Subgraph</option>
+          </select>
+        </label>
+
+        <label class="setting-item" v-if="store.vizSettings.globalViewMode === 'macro'">
+          <span class="s-label">Macro Landscape Granularity:</span>
+          <select v-model="store.vizSettings.macroGranularity" class="s-select">
+            <option value="fields">OpenAlex Fields (up to 30)</option>
+            <option value="subfields">Top OpenAlex Subfields (up to 45)</option>
+          </select>
         </label>
 
         <label class="setting-item">
@@ -143,7 +169,7 @@
           <label class="checkbox-label" style="color: #ffaa00; font-weight: bold;">
             <input type="checkbox" v-model="store.vizSettings.hideLeaves" @change="store.recalculateMetrics" /> 
             Backbone Mode (Hide Orphan Leaves)
-            <span class="help-icon" title="Strips away external nodes cited only once (inDegree = 1). Reveals the structural backbone and cross-citation bridges of the community, drastically reducing browser memory usage.">?</span>
+            <HelpTip term="backboneMode" />
           </label>
         </div>
       </div>
@@ -269,6 +295,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useGraphStore, issnMap } from '../../store/graphStore.js'
 import SunburstChart from './SunburstChart.vue'
+import HelpTip from '../common/HelpTip.vue'
 
 const store = useGraphStore()
 const selectedYears = ref([])

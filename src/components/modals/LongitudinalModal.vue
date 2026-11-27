@@ -7,12 +7,12 @@
 
       <div class="modal-header">
         <div class="title-with-badge">
-          <h2>Longitudinal Autopoiesis &amp; Eigenzeit (30-Year Trends)</h2>
+          <h2>Longitudinal Self-Reference &amp; Eigenzeit (30-Year Trends)</h2>
           <span class="luhmann-badge">30Y Scientometrics</span>
         </div>
         <p class="modal-subtitle">
-          Longitudinal trajectory of INCOSE (1990–2025+) tracking autopoietic operational closure, citation aging (Eigenzeit), and disciplinary breadth over time.<br />
-          <strong class="term">Operational Closure:</strong> Ratio of Core &rarr; Core citations quantifying autopoietic system differentiation from the scientific environment.<br />
+          Longitudinal trajectory of INCOSE (1990–2025+) tracking internal self-reference share, citation aging (Eigenzeit), and disciplinary breadth over time.<br />
+          <strong class="term">Self-Reference Rate:</strong> Ratio of Core &rarr; Core citations within all outgoing references (empirical proxy for internal vs. external reference balance).<br />
           <strong class="term">Price Index &amp; Median Lag:</strong> Measures temporal asynchrony (% refs &le; 5 yrs old vs median citation age).<br />
           <strong class="term">Shannon Diversity (H'):</strong> Entropy across external OpenAlex fields measuring genuine interdisciplinary breadth.
         </p>
@@ -47,7 +47,7 @@
         <div class="ribbon-metric">
           <span class="r-label">
             Core Papers Audited
-            <span class="help-icon" title="Only Core papers with at least 1 parsed outgoing reference in OpenAlex can be audited for citation ratios and lag.">?</span>
+            <HelpTip term="auditedPapers" />
           </span>
           <span class="r-val">{{ totalAuditedPapers.toLocaleString() }}</span>
           <span class="r-sub" v-if="store.longitudinalScopeSummary">
@@ -55,7 +55,7 @@
           </span>
         </div>
         <div class="ribbon-metric">
-          <span class="r-label">Avg Operational Closure</span>
+          <span class="r-label">Avg Self-Reference Rate</span>
           <span class="r-val" :class="{ 'val-accent': avgClosureRate >= 15 }">
             {{ avgClosureRate.toFixed(1) }}%
           </span>
@@ -90,7 +90,7 @@
           :class="{ active: activeTab === 'closure' }" 
           @click="setTab('closure')"
         >
-          🔒 1. Operational Closure
+          🔒 1. Self-Reference Rate
         </button>
         <button 
           type="button"
@@ -133,14 +133,11 @@
           <div class="chart-card-header">
             <div class="card-title">
               <span class="chart-indicator indicator-cyan"></span>
-              <h3>Operational Closure Rate (%) over Time</h3>
-              <span 
-                class="help-icon" 
-                title="Luhmannian Concept: Operative Geschlossenheit (Operational Closure). Measures (Core -> Core links) / (Total Core outgoing links). A rising trend indicates that the INCOSE system is increasingly referencing its own historical communications, establishing systemic autonomy and canon memory over relying solely on external fields."
-              >?</span>
+              <h3>Self-Reference Rate (% Core &rarr; Core) over Time</h3>
+              <HelpTip term="selfReference" />
             </div>
             <div class="card-legend">
-              <span class="legend-item"><span class="legend-color cyan"></span> Closure Rate (%)</span>
+              <span class="legend-item"><span class="legend-color cyan"></span> Self-Reference (%)</span>
               <span class="legend-item"><span class="legend-color gray-bar"></span> Publication Volume</span>
               <button
                 type="button"
@@ -168,11 +165,8 @@
           <div class="chart-card-header">
             <div class="card-title">
               <span class="chart-indicator indicator-green"></span>
-              <h3>Eigenzeit: Price Index (% refs &le; 5 yrs) vs. Median Epistemic Lag</h3>
-              <span 
-                class="help-icon" 
-                title="Scientometric & Luhmannian Concept: Temporal Asynchrony (Eigenzeit). Derek de Solla Price Index measures the share of citations pointing to contemporary external literature (<= 5 years old). Epistemic Lag tracks the median age of cited knowledge. High Price Index & low Lag indicate vibrant structural coupling with contemporary frontiers; low Price Index & high Lag reveal reliance on historical classics."
-              >?</span>
+              <h3>Eigenzeit: Price Index (% refs &le; 5 yrs) vs. Median Citation Age</h3>
+              <HelpTip term="priceIndexLag" />
             </div>
             <div class="card-legend">
               <span class="legend-item"><span class="legend-color green"></span> Price Index (%)</span>
@@ -204,10 +198,7 @@
             <div class="card-title">
               <span class="chart-indicator indicator-purple"></span>
               <h3>Interdisciplinary Breadth: Shannon Diversity (H') across External Fields</h3>
-              <span 
-                class="help-icon" 
-                title="Information Theory & Luhmannian Irritation Diversity: H' = -∑ p_i ln(p_i) across external OpenAlex scientific fields. Measures whether INCOSE distributes its external attention evenly across diverse scientific domains (high entropy) or narrows down to a monolithic monoculture (low entropy)."
-              >?</span>
+              <HelpTip term="shannonDiversity" />
             </div>
             <div class="card-legend">
               <span class="legend-item"><span class="legend-color purple"></span> Shannon Entropy H' (nats)</span>
@@ -246,6 +237,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { useGraphStore } from '../../store/graphStore.js'
+import HelpTip from '../common/HelpTip.vue'
 import { exportEChartForPrint } from '../../utils/chartPrintExport.js'
 
 const store = useGraphStore()
@@ -357,8 +349,8 @@ const buildClosureOption = (paperMode = false) => {
       formatter: (params) => {
         let res = `<div style="font-weight:bold;margin-bottom:4px;color:${lineColor};">${params[0].axisValue}</div>`
         params.forEach(p => {
-          if (p.seriesName === 'Operational Closure Rate') {
-            res += `<div>🔒 Closure Rate: <strong>${p.value !== null ? p.value + '%' : 'N/A'}</strong></div>`
+          if (p.seriesName === 'Self-Reference Rate') {
+            res += `<div>🔒 Self-Reference Rate: <strong>${p.value !== null ? p.value + '%' : 'N/A'}</strong></div>`
           } else if (p.seriesName === 'Core Papers') {
             res += `<div>📄 INCOSE Papers: <strong>${p.value}</strong></div>`
           }
@@ -399,7 +391,7 @@ const buildClosureOption = (paperMode = false) => {
         }
       },
       {
-        name: 'Operational Closure Rate',
+        name: 'Self-Reference Rate',
         type: 'line',
         yAxisIndex: 0,
         data: closureRates,
@@ -450,7 +442,7 @@ const buildEigenzeitOption = (paperMode = false) => {
         params.forEach(p => {
           if (p.seriesName === 'Price Index') {
             res += `<div>⏳ Price Index (&le;5y): <strong>${p.value !== null ? p.value + '%' : 'N/A'}</strong></div>`
-          } else if (p.seriesName === 'Median Epistemic Lag') {
+          } else if (p.seriesName === 'Median Citation Age') {
             res += `<div>🕰 Median Lag: <strong>${p.value !== null ? p.value + ' yrs' : 'N/A'}</strong></div>`
           }
         })
@@ -489,7 +481,7 @@ const buildEigenzeitOption = (paperMode = false) => {
         lineStyle: { width: 2.2, color: greenColor }
       },
       {
-        name: 'Median Epistemic Lag',
+        name: 'Median Citation Age',
         type: 'line',
         yAxisIndex: 1,
         data: medianLags,
@@ -595,11 +587,11 @@ const exportChartForPrint = (chartKey) => {
     if (!option) return
     exportEChartForPrint({
       option,
-      filename: 'incose_operational_closure_30y_300dpi.png',
+      filename: 'incose_self_reference_30y_300dpi.png',
       width: 1200,
       height: 520,
       pixelRatio: 3,
-      title: `Operational Closure Rate (%) over Time (${temporalSpan.value})`,
+      title: `Self-Reference Rate (% Core → Core) over Time (${temporalSpan.value})`,
       subtitle
     })
   } else if (chartKey === 'eigenzeit') {
@@ -611,7 +603,7 @@ const exportChartForPrint = (chartKey) => {
       width: 1200,
       height: 520,
       pixelRatio: 3,
-      title: `Eigenzeit: Price Index (≤5 yrs) vs. Median Epistemic Lag (${temporalSpan.value})`,
+      title: `Eigenzeit: Price Index (≤5 yrs) vs. Median Citation Age (${temporalSpan.value})`,
       subtitle
     })
   } else if (chartKey === 'diversity') {
