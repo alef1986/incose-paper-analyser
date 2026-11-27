@@ -8,6 +8,11 @@ const router = createRouter({
       path: '/',
       name: 'analyzer',
       component: SingleAnalyzer
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'analyzer-fallback',
+      component: SingleAnalyzer
     }
   ]
 })

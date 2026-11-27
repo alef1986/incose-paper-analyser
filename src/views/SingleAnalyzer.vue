@@ -97,6 +97,7 @@
     <NodeInfoModal /> <!-- Внедряем меню поверх графа -->
     <BlindSpotsModal />
     <LongitudinalModal />
+    <AccessGateModal v-if="!store.isLoaded" />
     
     <div id="empty-state" v-if="!store.focusedNodeId && !store.isLoaded">
       Upload JSON and select a node from the right panel to build its cluster (Radius = 1).
@@ -113,6 +114,7 @@ import MetricsPanel from '../components/panels/MetricsPanel.vue'
 import NodeInfoModal from '../components/modals/NodeInfoModal.vue'
 import BlindSpotsModal from '../components/modals/BlindSpotsModal.vue'
 import LongitudinalModal from '../components/modals/LongitudinalModal.vue'
+import AccessGateModal from '../components/modals/AccessGateModal.vue'
 
 const store = useGraphStore()
 
