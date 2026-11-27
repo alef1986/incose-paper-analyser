@@ -46,28 +46,39 @@
             🕳 Absolute Blind Spots
           </button>
 
-          <div class="tabs-right-tools" v-if="activeTab === 'quadrants' || activeTab === 'absent'">
+          <div class="tabs-right-tools">
             <button
               type="button"
-              class="icon-tool-btn"
-              :class="{ active: isPaperMode }"
-              @click="togglePaperMode"
-              :title="isPaperMode ? 'Switch to Dark UI Mode' : 'Preview Paper Mode (Light Print Theme)'"
+              class="icon-tool-btn link-btn"
+              :class="{ copied: linkCopied }"
+              @click="copyModalLink($event)"
+              title="Copy direct link to this view & settings (Shift+Click to include access key for private preview)"
             >
-              {{ isPaperMode ? '🌙' : '☀️' }}
+              {{ linkCopied ? '✓' : '🔗' }}
             </button>
-            <button
-              type="button"
-              class="icon-tool-btn print-btn"
-              @click="activeTab === 'quadrants' ? exportQuadrantsForPrint() : exportHorizonForPrint()"
-              title="Save 300 DPI PNG for Print (Paper Mode, White Background)"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="6 9 6 2 18 2 18 9"></polyline>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-                <rect x="6" y="14" width="12" height="8"></rect>
-              </svg>
-            </button>
+            <template v-if="activeTab === 'quadrants' || activeTab === 'absent'">
+              <button
+                type="button"
+                class="icon-tool-btn"
+                :class="{ active: isPaperMode }"
+                @click="togglePaperMode"
+                :title="isPaperMode ? 'Switch to Dark UI Mode' : 'Preview Paper Mode (Light Print Theme)'"
+              >
+                {{ isPaperMode ? '🌙' : '☀️' }}
+              </button>
+              <button
+                type="button"
+                class="icon-tool-btn print-btn"
+                @click="activeTab === 'quadrants' ? exportQuadrantsForPrint() : exportHorizonForPrint()"
+                title="Save 300 DPI PNG for Print (Paper Mode, White Background)"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                  <rect x="6" y="14" width="12" height="8"></rect>
+                </svg>
+              </button>
+            </template>
           </div>
         </div>
       </div>
@@ -598,6 +609,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { useGraphStore, computeLagStats } from '../../store/graphStore.js'
 import { getCanonicalDomainColor } from '../../utils/domainColors.js'
+import { buildShareUrl, copyTextToClipboard } from '../../utils/urlState.js'
 import HelpTip from '../common/HelpTip.vue'
 import {
   PRINT_DOMAIN_COLORS,
@@ -612,6 +624,52 @@ const granularity = ref('fields') // 'fields' | 'subfields'
 const yMetric = ref('translator') // 'translator' | 'assimilation'
 const hideOutliers = ref(true) // Hide tiny outliers (< 20 citations)
 const isPaperMode = ref(false)
+const linkCopied = ref(false)
+let copyTimer = null
+
+const copyModalLink = async (evt) => {
+  const overrides = {
+    modal: 'blindspots',
+    tab: activeTab.value,
+    paper: isPaperMode.value
+  }
+  if (activeTab.value === 'quadrants') {
+    overrides.gran = granularity.value
+    overrides.y = yMetric.value
+    overrides.outliers = hideOutliers.value
+  } else if (activeTab.value === 'absent') {
+    overrides.gran = absentGranularity.value
+  }
+  const url = buildShareUrl(store, overrides, { includeKey: Boolean(evt?.shiftKey) })
+  const ok = await copyTextToClipboard(url)
+  if (ok) {
+    linkCopied.value = true
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => { linkCopied.value = false }, 1800)
+  }
+}
+
+const consumeModalIntent = () => {
+  const intent = store.modalUrlIntent
+  if (!intent || intent.modal !== 'blindspots') return
+  if (['table', 'quadrants', 'absent'].includes(intent.tab)) {
+    activeTab.value = intent.tab
+  }
+  if (intent.gran === 'fields' || intent.gran === 'subfields') {
+    if (activeTab.value === 'absent') absentGranularity.value = intent.gran
+    else granularity.value = intent.gran
+  }
+  if (intent.y === 'translator' || intent.y === 'assimilation') {
+    yMetric.value = intent.y
+  }
+  if (typeof intent.outliers === 'boolean') {
+    hideOutliers.value = intent.outliers
+  }
+  if (typeof intent.paper === 'boolean') {
+    isPaperMode.value = intent.paper
+  }
+  store.modalUrlIntent = null
+}
 const isQuadrantZoomed = ref(false)
 const quadrantZoomState = ref({ xStart: 0, xEnd: 100, yStart: 0, yEnd: 100 })
 const chartCanvasRef = ref(null)
@@ -1812,6 +1870,7 @@ const onWindowResize = () => {
 
 watch(() => store.isBlindSpotsOpen, (isOpen) => {
   if (isOpen) {
+    consumeModalIntent()
     if (activeTab.value === 'quadrants') {
       nextTick(() => {
         updateChart()
@@ -2910,4 +2969,11 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
+
+.icon-tool-btn.link-btn.copied {
+  background: rgba(92, 184, 92, 0.25);
+  border-color: #5cb85c;
+  color: #86efac;
+  font-weight: 700;
+}
 </style>

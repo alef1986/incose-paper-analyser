@@ -91,6 +91,14 @@
         >
           ℹ Guide
         </button>
+        <button 
+          class="preset-btn share-link-btn" 
+          :class="{ copied: shareCopied }"
+          @click="copyCurrentViewLink($event)"
+          title="Copy direct link to current 3D view & active filters (Shift+Click to include access key for private preview)"
+        >
+          {{ shareCopied ? '✓ Link Copied' : '🔗 Share Link' }}
+        </button>
       </div>
 
       <!-- Preset Contextual Guidance Banner -->
@@ -115,8 +123,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useGraphStore } from '../store/graphStore.js'
+import { buildShareUrl, applyUrlStateToStore, copyTextToClipboard } from '../utils/urlState.js'
 import ForceGraph3D from '../components/visualization/ForceGraph3D.vue'
 import EgoPanel from '../components/panels/EgoPanel.vue'
 import MetricsPanel from '../components/panels/MetricsPanel.vue'
@@ -158,6 +167,31 @@ const presetHintText = computed(() => {
       return null
   }
 })
+
+const shareCopied = ref(false)
+let shareCopyTimer = null
+let hasAppliedInitialUrl = false
+
+const copyCurrentViewLink = async (evt) => {
+  const url = buildShareUrl(store, {}, { includeKey: Boolean(evt?.shiftKey) })
+  const ok = await copyTextToClipboard(url)
+  if (ok) {
+    shareCopied.value = true
+    if (shareCopyTimer) clearTimeout(shareCopyTimer)
+    shareCopyTimer = setTimeout(() => { shareCopied.value = false }, 1800)
+  }
+}
+
+watch(
+  () => store.isLoaded,
+  (loaded) => {
+    if (loaded && !hasAppliedInitialUrl) {
+      hasAppliedInitialUrl = true
+      applyUrlStateToStore(store)
+    }
+  },
+  { immediate: true }
+)
 
 const resetSlice = () => {
   store.activeFilters.years = []
@@ -386,5 +420,12 @@ const resetSlice = () => {
   background: rgba(239, 68, 68, 0.35);
   color: #fff;
   border-color: #ef4444;
+}
+
+.preset-btn.share-link-btn.copied {
+  background: rgba(92, 184, 92, 0.22);
+  border-color: #5cb85c;
+  color: #86efac;
+  font-weight: 600;
 }
 </style>

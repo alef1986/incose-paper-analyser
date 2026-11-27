@@ -92,6 +92,7 @@ export const useGraphStore = defineStore('graph', {
     isBlindSpotsOpen: false,
     isLongitudinalOpen: false,
     isGuideOpen: false,
+    modalUrlIntent: null,
     activePreset: null, // 'bridges' | 'classics' | 'frontier' | 'blindspots' | null
 
     graphModel: null,

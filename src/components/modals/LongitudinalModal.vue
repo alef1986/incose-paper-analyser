@@ -112,6 +112,15 @@
         <div class="tabs-right-tools">
           <button
             type="button"
+            class="icon-tool-btn link-btn"
+            :class="{ copied: linkCopied }"
+            @click="copyModalLink($event)"
+            title="Copy direct link to this 30Y Trends chart & active filters (Shift+Click to include access key)"
+          >
+            {{ linkCopied ? '✓' : '🔗' }}
+          </button>
+          <button
+            type="button"
             class="icon-tool-btn"
             :class="{ active: isPaperMode }"
             @click="togglePaperMode"
@@ -239,10 +248,39 @@ import * as echarts from 'echarts'
 import { useGraphStore } from '../../store/graphStore.js'
 import HelpTip from '../common/HelpTip.vue'
 import { exportEChartForPrint } from '../../utils/chartPrintExport.js'
+import { buildShareUrl, copyTextToClipboard } from '../../utils/urlState.js'
 
 const store = useGraphStore()
 const activeTab = ref('all') // 'all' | 'closure' | 'eigenzeit' | 'diversity'
 const isPaperMode = ref(false)
+const linkCopied = ref(false)
+let copyTimer = null
+
+const copyModalLink = async (evt) => {
+  const url = buildShareUrl(
+    store,
+    { modal: 'trends', tab: activeTab.value, paper: isPaperMode.value },
+    { includeKey: Boolean(evt?.shiftKey) }
+  )
+  const ok = await copyTextToClipboard(url)
+  if (ok) {
+    linkCopied.value = true
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => { linkCopied.value = false }, 1800)
+  }
+}
+
+const consumeModalIntent = () => {
+  const intent = store.modalUrlIntent
+  if (!intent || intent.modal !== 'trends') return
+  if (['all', 'closure', 'eigenzeit', 'diversity'].includes(intent.tab)) {
+    activeTab.value = intent.tab
+  }
+  if (typeof intent.paper === 'boolean') {
+    isPaperMode.value = intent.paper
+  }
+  store.modalUrlIntent = null
+}
 
 const chartClosureRef = ref(null)
 const chartEigenzeitRef = ref(null)
@@ -646,6 +684,7 @@ watch(
   () => store.isLongitudinalOpen,
   (isOpen) => {
     if (isOpen) {
+      consumeModalIntent()
       nextTick(() => {
         initOrUpdateCharts()
         setTimeout(resizeCharts, 80)
@@ -1144,5 +1183,12 @@ onBeforeUnmount(() => {
 .footer-close-btn:hover {
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
+}
+
+.icon-tool-btn.link-btn.copied {
+  background: rgba(92, 184, 92, 0.25);
+  border-color: #5cb85c;
+  color: #86efac;
+  font-weight: 700;
 }
 </style>
