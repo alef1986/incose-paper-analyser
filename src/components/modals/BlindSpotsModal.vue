@@ -316,6 +316,31 @@
             </label>
           </div>
 
+          <div class="control-group zoom-controls">
+            <span class="control-label">Zoom:</span>
+            <button
+              type="button"
+              class="ctrl-btn zoom-btn"
+              @click="zoomQuadrants(0.65)"
+              title="Zoom In (or scroll mouse wheel on chart)"
+            >＋</button>
+            <button
+              type="button"
+              class="ctrl-btn zoom-btn"
+              @click="zoomQuadrants(1.5)"
+              :disabled="!isQuadrantZoomed"
+              title="Zoom Out (or scroll mouse wheel on chart)"
+            >－</button>
+            <button
+              type="button"
+              class="ctrl-btn zoom-btn"
+              :class="{ active: isQuadrantZoomed }"
+              @click="resetQuadrantZoom"
+              :disabled="!isQuadrantZoomed"
+              title="Reset Zoom to full view"
+            >↺</button>
+          </div>
+
           <div class="quadrant-stat-pill" v-if="flattenedData.length > 0">
             Plotting <b>{{ flattenedData.length }}</b> {{ granularity === 'fields' ? 'Fields' : 'Subfields' }}
           </div>
@@ -402,12 +427,80 @@
           <div class="horizon-chart-card" :class="{ 'is-paper-mode': isPaperMode }">
             <div class="chart-header-sub">
               <span>Epistemic Horizon Coverage by Domain (100% Stacked)</span>
+              <span class="chart-header-hint">Hover a segment for preview • Click a segment to inspect full list</span>
             </div>
             <div ref="horizonChartRef" class="horizon-chart-canvas"></div>
           </div>
 
-          <!-- 3. Grouped Tag Lists below the chart -->
+          <!-- 3. Focused Segment Breakdown (when user clicks a bar segment) OR Full Overview -->
           <div class="absent-tags-container">
+            <div
+              v-if="selectedHorizonSegment && selectedSegmentDetails"
+              class="absent-section segment-drilldown-card"
+              :class="'section-' + selectedHorizonSegment.bucket"
+            >
+              <div class="absent-section-header">
+                <h4
+                  class="absent-section-title"
+                  :class="{
+                    'title-success': selectedHorizonSegment.bucket === 'active',
+                    'title-warning': selectedHorizonSegment.bucket === 'marginal',
+                    'title-danger': selectedHorizonSegment.bucket === 'zero'
+                  }"
+                >
+                  {{ selectedSegmentDetails.icon }} {{ selectedHorizonSegment.domainName }} — {{ selectedSegmentDetails.label }}
+                </h4>
+                <div class="segment-header-actions">
+                  <span
+                    class="section-count-badge"
+                    :class="{
+                      'badge-success': selectedHorizonSegment.bucket === 'active',
+                      'badge-warning': selectedHorizonSegment.bucket === 'marginal',
+                      'badge-danger': selectedHorizonSegment.bucket === 'zero'
+                    }"
+                  >
+                    {{ selectedSegmentDetails.items.length }} of {{ selectedSegmentDetails.total }} {{ absentGranularity }} ({{ selectedSegmentDetails.pct }}%)
+                  </span>
+                  <button
+                    type="button"
+                    class="clear-segment-btn"
+                    @click="clearSelectedHorizonSegment"
+                    title="Return to full overview"
+                  >
+                    ✖ Show All Overview
+                  </button>
+                </div>
+              </div>
+              <p class="section-desc">
+                {{ selectedHorizonSegment.bucket === 'zero'
+                    ? 'External disciplines completely absent from INCOSE systemic resonance (0 references in current scope).'
+                    : 'Click any discipline tag below to slice the 3D dashboard to that discipline and close this modal.' }}
+              </p>
+              <div v-if="selectedSegmentDetails.items.length === 0" class="segment-empty">
+                No {{ absentGranularity }} in this segment.
+              </div>
+              <div v-else class="tag-cloud">
+                <span
+                  v-for="item in selectedSegmentDetails.items"
+                  :key="item.name"
+                  class="absent-tag"
+                  :class="{
+                    'tag-active tag-clickable': selectedHorizonSegment.bucket === 'active',
+                    'tag-marginal tag-clickable': selectedHorizonSegment.bucket === 'marginal',
+                    'tag-zero': selectedHorizonSegment.bucket === 'zero'
+                  }"
+                  @click="selectedHorizonSegment.bucket !== 'zero' ? applyAbsentFilter(item) : null"
+                  :title="selectedHorizonSegment.bucket === 'zero'
+                    ? '0 references in INCOSE corpus'
+                    : `Click to filter 3D view to ${item.name} (${item.totalCitations} citations)`"
+                >
+                  {{ item.name }}
+                  <b v-if="selectedHorizonSegment.bucket !== 'zero'" class="tag-cnt">({{ item.totalCitations }})</b>
+                </span>
+              </div>
+            </div>
+
+            <template v-else>
             <!-- Absolute Blind Spots (0 Citations) -->
             <div class="absent-section section-zero">
               <div class="absent-section-header">
@@ -470,6 +563,7 @@
                 </template>
               </div>
             </div>
+            </template>
           </div>
         </template>
       </div>
@@ -484,8 +578,8 @@
           {{ activeTab === 'table' 
               ? '💡 Click any domain to set a 3D network slice and close this modal.' 
               : (activeTab === 'quadrants'
-                  ? '💡 Click any bubble to slice the 3D network to that Field/Subfield and close this modal.'
-                  : '💡 Click any Marginal tag (1–19 citations) to filter the 3D network to that discipline and close this modal.') }}
+                  ? '💡 Scroll wheel to zoom, drag to pan, click any bubble to filter. Print button exports the exact zoomed view at 300 DPI.'
+                  : '💡 Hover or click any bar segment to inspect Active, Marginal, or Blind Spot disciplines. Click any Active/Marginal tag to filter.') }}
         </span>
         <button class="footer-close-btn" @click="close">Close Audit</button>
       </div>
@@ -516,11 +610,14 @@ const granularity = ref('fields') // 'fields' | 'subfields'
 const yMetric = ref('translator') // 'translator' | 'assimilation'
 const hideOutliers = ref(true) // Hide tiny outliers (< 20 citations)
 const isPaperMode = ref(false)
+const isQuadrantZoomed = ref(false)
+const quadrantZoomState = ref({ xStart: 0, xEnd: 100, yStart: 0, yEnd: 100 })
 const chartCanvasRef = ref(null)
 let chartInstance = null
 
 // --- Tab 3: Canonical OpenAlex Catalog & Absent Blind Spots State ---
 const absentGranularity = ref('subfields') // 'subfields' | 'fields'
+const selectedHorizonSegment = ref(null) // { domainName, bucket: 'active' | 'marginal' | 'zero' } | null
 const horizonChartRef = ref(null)
 let horizonChartInstance = null
 
@@ -564,6 +661,9 @@ const setSort = (key) => {
 
 const close = () => {
   store.isBlindSpotsOpen = false
+  selectedHorizonSegment.value = null
+  isQuadrantZoomed.value = false
+  quadrantZoomState.value = { xStart: 0, xEnd: 100, yStart: 0, yEnd: 100 }
   if (store.activePreset === 'blindspots') {
     store.activePreset = null
   }
@@ -687,7 +787,13 @@ const flattenedData = computed(() => {
   return result
 })
 
+const resetZoomStateOnly = () => {
+  isQuadrantZoomed.value = false
+  quadrantZoomState.value = { xStart: 0, xEnd: 100, yStart: 0, yEnd: 100 }
+}
+
 const onToggleOutliers = () => {
+  resetZoomStateOnly()
   nextTick(updateChart)
 }
 
@@ -717,19 +823,27 @@ const setTab = (tab) => {
 
 const setGranularity = (g) => {
   granularity.value = g
+  resetZoomStateOnly()
   nextTick(updateChart)
 }
 
 const setYMetric = (m) => {
   yMetric.value = m
+  resetZoomStateOnly()
   nextTick(updateChart)
 }
 
 const setAbsentGranularity = (g) => {
   absentGranularity.value = g
+  selectedHorizonSegment.value = null
   nextTick(() => {
     updateHorizonChart()
   })
+}
+
+const clearSelectedHorizonSegment = () => {
+  selectedHorizonSegment.value = null
+  nextTick(updateHorizonChart)
 }
 
 const applyAbsentFilter = (item) => {
@@ -949,6 +1063,145 @@ const absentAnalysis = computed(() => {
   }
 })
 
+const selectedSegmentDetails = computed(() => {
+  if (!selectedHorizonSegment.value || !absentAnalysis.value) return null
+  const { domainName, bucket } = selectedHorizonSegment.value
+  const dg = absentAnalysis.value.domainGroups.find(d => d.domainName === domainName)
+  if (!dg) return null
+
+  if (bucket === 'active') {
+    return {
+      label: 'Active Horizon (≥20 refs)',
+      icon: '🟢',
+      items: dg.activeItems,
+      total: dg.total,
+      pct: dg.activePct
+    }
+  }
+  if (bucket === 'marginal') {
+    return {
+      label: 'Marginal / Trace Imports (1–19 refs)',
+      icon: '⚡',
+      items: dg.marginalItems,
+      total: dg.total,
+      pct: dg.marginalPct
+    }
+  }
+  return {
+    label: 'Absolute Blind Spots (0 refs)',
+    icon: '🕳',
+    items: dg.zeroItems,
+    total: dg.total,
+    pct: dg.zeroPct
+  }
+})
+
+const handleHorizonClick = (params) => {
+  const data = params?.data
+  if (!data || !data.domainName || !data.bucket) return
+  if (
+    selectedHorizonSegment.value &&
+    selectedHorizonSegment.value.domainName === data.domainName &&
+    selectedHorizonSegment.value.bucket === data.bucket
+  ) {
+    selectedHorizonSegment.value = null
+  } else {
+    selectedHorizonSegment.value = {
+      domainName: data.domainName,
+      bucket: data.bucket
+    }
+  }
+  nextTick(updateHorizonChart)
+}
+
+const handleQuadrantDataZoom = () => {
+  if (!chartInstance) return
+  const opt = chartInstance.getOption()
+  const dz = opt?.dataZoom || []
+  const dzX = dz.find(z => z.id === 'zoom-x') || dz[0]
+  const dzY = dz.find(z => z.id === 'zoom-y') || dz[1]
+  const xStart = dzX && typeof dzX.start === 'number' ? dzX.start : 0
+  const xEnd = dzX && typeof dzX.end === 'number' ? dzX.end : 100
+  const yStart = dzY && typeof dzY.start === 'number' ? dzY.start : 0
+  const yEnd = dzY && typeof dzY.end === 'number' ? dzY.end : 100
+
+  quadrantZoomState.value = { xStart, xEnd, yStart, yEnd }
+  isQuadrantZoomed.value = xStart > 0.2 || xEnd < 99.8 || yStart > 0.2 || yEnd < 99.8
+}
+
+const zoomQuadrants = (factor) => {
+  if (!chartInstance) return
+  const { xStart, xEnd, yStart, yEnd } = quadrantZoomState.value
+  const zoomAxis = (start, end) => {
+    const center = (start + end) / 2
+    const span = Math.max(4, Math.min(100, (end - start) * factor))
+    let nextStart = center - span / 2
+    let nextEnd = center + span / 2
+    if (nextStart < 0) {
+      nextEnd = Math.min(100, nextEnd - nextStart)
+      nextStart = 0
+    }
+    if (nextEnd > 100) {
+      nextStart = Math.max(0, nextStart - (nextEnd - 100))
+      nextEnd = 100
+    }
+    return [Number(nextStart.toFixed(2)), Number(nextEnd.toFixed(2))]
+  }
+
+  const [nxStart, nxEnd] = zoomAxis(xStart, xEnd)
+  const [nyStart, nyEnd] = zoomAxis(yStart, yEnd)
+
+  chartInstance.dispatchAction({
+    type: 'dataZoom',
+    batch: [
+      { dataZoomIndex: 0, start: nxStart, end: nxEnd },
+      { dataZoomIndex: 1, start: nyStart, end: nyEnd }
+    ]
+  })
+  handleQuadrantDataZoom()
+}
+
+const resetQuadrantZoom = () => {
+  if (!chartInstance) return
+  chartInstance.dispatchAction({
+    type: 'dataZoom',
+    batch: [
+      { dataZoomIndex: 0, start: 0, end: 100 },
+      { dataZoomIndex: 1, start: 0, end: 100 }
+    ]
+  })
+  resetZoomStateOnly()
+}
+
+const getCurrentQuadrantZoomBounds = () => {
+  if (!chartInstance || !isQuadrantZoomed.value) return null
+  try {
+    const model = chartInstance.getModel()
+    const xExtent = model?.getComponent('xAxis', 0)?.axis?.scale?.getExtent()
+    const yExtent = model?.getComponent('yAxis', 0)?.axis?.scale?.getExtent()
+    if (
+      Array.isArray(xExtent) &&
+      xExtent.length === 2 &&
+      Array.isArray(yExtent) &&
+      yExtent.length === 2 &&
+      Number.isFinite(xExtent[0]) &&
+      Number.isFinite(xExtent[1]) &&
+      Number.isFinite(yExtent[0]) &&
+      Number.isFinite(yExtent[1])
+    ) {
+      return {
+        xMin: Number(xExtent[0].toFixed(1)),
+        xMax: Number(xExtent[1].toFixed(1)),
+        yMin: Number(Math.max(0, yExtent[0]).toFixed(1)),
+        yMax: Number(Math.min(100, yExtent[1]).toFixed(1))
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 const handleChartClick = (params) => {
   const raw = params.data?.rawItem
   if (raw) {
@@ -957,7 +1210,7 @@ const handleChartClick = (params) => {
   }
 }
 
-const buildQuadrantsOption = (paperMode = false) => {
+const buildQuadrantsOption = (paperMode = false, zoomBounds = null) => {
   const items = flattenedData.value
   if (!items || items.length === 0) return null
 
@@ -979,10 +1232,22 @@ const buildQuadrantsOption = (paperMode = false) => {
     domainGroups.get(d).push(item)
   })
 
+  const labelPool = zoomBounds
+    ? items.filter(i => {
+        const yv = getYVal(i)
+        return (
+          i.medianLag >= zoomBounds.xMin &&
+          i.medianLag <= zoomBounds.xMax &&
+          yv >= zoomBounds.yMin &&
+          yv <= zoomBounds.yMax
+        )
+      })
+    : items
+
   const top10Keys = new Set(
-    [...items]
+    [...labelPool]
       .sort((a, b) => b.totalCitations - a.totalCitations)
-      .slice(0, 10)
+      .slice(0, zoomBounds ? 18 : 10)
       .map(i => i.pathString)
   )
 
@@ -1005,6 +1270,7 @@ const buildQuadrantsOption = (paperMode = false) => {
     const seriesObj = {
       name: domainName,
       type: 'scatter',
+      clip: true,
       itemStyle: {
         color: color,
         opacity: paperMode ? 0.85 : 0.82,
@@ -1158,12 +1424,39 @@ const buildQuadrantsOption = (paperMode = false) => {
         `
       }
     },
+    dataZoom: zoomBounds
+      ? undefined
+      : [
+          {
+            type: 'inside',
+            id: 'zoom-x',
+            xAxisIndex: 0,
+            filterMode: 'none',
+            zoomOnMouseWheel: true,
+            moveOnMouseMove: true,
+            moveOnMouseWheel: false,
+            start: quadrantZoomState.value.xStart,
+            end: quadrantZoomState.value.xEnd
+          },
+          {
+            type: 'inside',
+            id: 'zoom-y',
+            yAxisIndex: 0,
+            filterMode: 'none',
+            zoomOnMouseWheel: true,
+            moveOnMouseMove: true,
+            moveOnMouseWheel: false,
+            start: quadrantZoomState.value.yStart,
+            end: quadrantZoomState.value.yEnd
+          }
+        ],
     xAxis: {
       type: 'value',
       name: 'Median Epistemic Lag (Years)',
       nameLocation: 'middle',
       nameGap: 32,
       nameTextStyle: { color: axisNameColor, fontSize: 11.5, fontWeight: paperMode ? 'bold' : 'normal' },
+      ...(zoomBounds ? { min: zoomBounds.xMin, max: zoomBounds.xMax } : {}),
       axisLine: { lineStyle: { color: axisLineColor } },
       axisTick: { lineStyle: { color: axisLineColor } },
       splitLine: { lineStyle: { color: splitLineColor } },
@@ -1175,8 +1468,10 @@ const buildQuadrantsOption = (paperMode = false) => {
       nameLocation: 'middle',
       nameGap: 44,
       nameTextStyle: { color: axisNameColor, fontSize: 11.5, fontWeight: paperMode ? 'bold' : 'normal' },
-      min: 0,
-      max: (val) => Math.min(100, Math.max(20, Math.ceil((val.max + 6) / 10) * 10)),
+      min: zoomBounds ? zoomBounds.yMin : 0,
+      max: zoomBounds
+        ? zoomBounds.yMax
+        : (val) => Math.min(100, Math.max(20, Math.ceil((val.max + 6) / 10) * 10)),
       axisLine: { lineStyle: { color: axisLineColor } },
       axisTick: { lineStyle: { color: axisLineColor } },
       splitLine: { lineStyle: { color: splitLineColor } },
@@ -1239,6 +1534,7 @@ const updateChart = () => {
   if (!chartInstance) {
     chartInstance = echarts.init(chartCanvasRef.value)
     chartInstance.on('click', handleChartClick)
+    chartInstance.on('datazoom', handleQuadrantDataZoom)
   }
 
   const option = buildQuadrantsOption(isPaperMode.value)
@@ -1259,7 +1555,7 @@ const updateChart = () => {
   chartInstance.setOption(option, true)
 }
 
-const buildHorizonOption = (paperMode = false) => {
+const buildHorizonOption = (paperMode = false, forPrint = false) => {
   const analysis = absentAnalysis.value
   if (!analysis || analysis.totalCanonical === 0) return null
 
@@ -1270,20 +1566,39 @@ const buildHorizonOption = (paperMode = false) => {
     domainStatsMap.set(dg.domainName, dg)
   })
 
-  const activePcts = []
-  const marginalPcts = []
-  const zeroPcts = []
+  const sel = !forPrint ? selectedHorizonSegment.value : null
+
+  const makeSegmentPoint = (dName, bucket, pct) => {
+    const isSelected = sel && sel.domainName === dName && sel.bucket === bucket
+    const isDimmed = sel && !isSelected
+    return {
+      value: pct,
+      domainName: dName,
+      bucket,
+      itemStyle: sel
+        ? {
+            opacity: isDimmed ? 0.35 : 1,
+            borderColor: isSelected ? (paperMode ? '#0f172a' : '#ffffff') : 'transparent',
+            borderWidth: isSelected ? 2 : 0
+          }
+        : undefined
+    }
+  }
+
+  const activeData = []
+  const marginalData = []
+  const zeroData = []
 
   yDomains.forEach(dName => {
     const dg = domainStatsMap.get(dName)
     if (dg) {
-      activePcts.push(dg.activePct)
-      marginalPcts.push(dg.marginalPct)
-      zeroPcts.push(dg.zeroPct)
+      activeData.push(makeSegmentPoint(dName, 'active', dg.activePct))
+      marginalData.push(makeSegmentPoint(dName, 'marginal', dg.marginalPct))
+      zeroData.push(makeSegmentPoint(dName, 'zero', dg.zeroPct))
     } else {
-      activePcts.push(0)
-      marginalPcts.push(0)
-      zeroPcts.push(0)
+      activeData.push(makeSegmentPoint(dName, 'active', 0))
+      marginalData.push(makeSegmentPoint(dName, 'marginal', 0))
+      zeroData.push(makeSegmentPoint(dName, 'zero', 0))
     }
   })
 
@@ -1310,27 +1625,55 @@ const buildHorizonOption = (paperMode = false) => {
       itemHeight: 10
     },
     tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      backgroundColor: paperMode ? 'rgba(255, 255, 255, 0.96)' : 'rgba(15, 15, 25, 0.95)',
+      trigger: 'item',
+      confine: true,
+      backgroundColor: paperMode ? 'rgba(255, 255, 255, 0.97)' : 'rgba(15, 15, 25, 0.96)',
       borderColor: paperMode ? '#0284c7' : '#00bfff',
       borderWidth: 1,
-      padding: [8, 12],
+      padding: [10, 13],
       textStyle: { color: paperMode ? '#111827' : '#eee', fontSize: 11 },
       formatter: (params) => {
-        if (!params || params.length === 0) return ''
-        const domName = params[0].name
-        const dg = domainStatsMap.get(domName)
+        const d = params?.data
+        if (!d || !d.domainName || !d.bucket) return ''
+        const dg = domainStatsMap.get(d.domainName)
         if (!dg) return ''
-        const titleClr = paperMode ? '#0284c7' : '#00bfff'
+
+        const meta =
+          d.bucket === 'active'
+            ? { title: 'Active Horizon (≥20 refs)', color: paperMode ? '#15803d' : '#5cb85c', items: dg.activeItems }
+            : d.bucket === 'marginal'
+              ? { title: 'Marginal / Trace (1–19 refs)', color: paperMode ? '#b45309' : '#f0ad4e', items: dg.marginalItems }
+              : { title: 'Absolute Blind Spots (0 refs)', color: paperMode ? '#dc2626' : '#ff6b6b', items: dg.zeroItems }
+
+        const previewLimit = 10
+        const previewRows = meta.items
+          .slice(0, previewLimit)
+          .map(item =>
+            d.bucket === 'zero'
+              ? `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;">• ${item.name}</div>`
+              : `<div style="display:flex;justify-content:space-between;gap:10px;max-width:300px;"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">• ${item.name}</span><span style="opacity:0.8;font-family:monospace;flex-shrink:0;">(${item.totalCitations})</span></div>`
+          )
+          .join('')
+
+        const moreHtml =
+          meta.items.length > previewLimit
+            ? `<div style="margin-top:4px;opacity:0.75;font-style:italic;font-size:10px;">+ ${meta.items.length - previewLimit} more…</div>`
+            : ''
+
+        const hintClr = paperMode ? '#0284c7' : '#00bfff'
         return `
-          <div style="font-weight: bold; color: ${titleClr}; font-size: 12px; margin-bottom: 4px; border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 3px;">
-            ${domName} (${dg.total} ${absentGranularity.value})
+          <div style="font-weight:bold;color:${meta.color};font-size:12px;margin-bottom:3px;border-bottom:1px solid rgba(128,128,128,0.22);padding-bottom:4px;">
+            ${d.domainName} — ${meta.title}
           </div>
-          <div style="display: grid; grid-template-columns: auto auto; gap: 2px 14px; font-size: 10.5px;">
-            <span style="color: #16a34a;">● Active (≥20 refs):</span><span><b>${dg.activeCount}</b> (${dg.activePct}%)</span>
-            <span style="color: #d97706;">● Marginal (1–19 refs):</span><span><b>${dg.marginalCount}</b> (${dg.marginalPct}%)</span>
-            <span style="color: #dc2626;">● Blind Spot (0 refs):</span><span><b>${dg.zeroCount}</b> (${dg.zeroPct}%)</span>
+          <div style="font-size:10.5px;margin-bottom:6px;opacity:0.9;">
+            <b>${meta.items.length}</b> of ${dg.total} ${absentGranularity.value} (<b>${d.value}%</b>)
+          </div>
+          <div style="font-size:10.5px;line-height:1.45;">
+            ${previewRows || '<div style="opacity:0.7;">None</div>'}
+            ${moreHtml}
+          </div>
+          <div style="margin-top:6px;font-size:9.5px;color:${hintClr};font-style:italic;">
+            Click segment to inspect full breakdown below
           </div>
         `
       }
@@ -1354,6 +1697,7 @@ const buildHorizonOption = (paperMode = false) => {
         name: 'Active (≥20 refs)',
         type: 'bar',
         stack: 'total',
+        cursor: 'pointer',
         color: paperMode ? '#16a34a' : '#5cb85c',
         label: {
           show: true,
@@ -1363,12 +1707,13 @@ const buildHorizonOption = (paperMode = false) => {
           fontSize: 10,
           fontWeight: 'bold'
         },
-        data: activePcts
+        data: activeData
       },
       {
         name: 'Marginal (1–19 refs)',
         type: 'bar',
         stack: 'total',
+        cursor: 'pointer',
         color: paperMode ? '#d97706' : '#f0ad4e',
         label: {
           show: true,
@@ -1378,12 +1723,13 @@ const buildHorizonOption = (paperMode = false) => {
           fontSize: 10,
           fontWeight: 'bold'
         },
-        data: marginalPcts
+        data: marginalData
       },
       {
         name: 'Absolute Blind Spot (0 refs)',
         type: 'bar',
         stack: 'total',
+        cursor: 'pointer',
         color: paperMode ? '#dc2626' : 'rgba(217, 83, 79, 0.55)',
         label: {
           show: true,
@@ -1393,7 +1739,7 @@ const buildHorizonOption = (paperMode = false) => {
           fontSize: 10,
           fontWeight: 'bold'
         },
-        data: zeroPcts
+        data: zeroData
       }
     ]
   }
@@ -1403,6 +1749,7 @@ const updateHorizonChart = () => {
   if (!horizonChartRef.value) return
   if (!horizonChartInstance) {
     horizonChartInstance = echarts.init(horizonChartRef.value)
+    horizonChartInstance.on('click', handleHorizonClick)
   }
 
   const option = buildHorizonOption(isPaperMode.value)
@@ -1415,23 +1762,27 @@ const updateHorizonChart = () => {
 }
 
 const exportQuadrantsForPrint = () => {
-  const option = buildQuadrantsOption(true)
+  const zoomBounds = getCurrentQuadrantZoomBounds()
+  const option = buildQuadrantsOption(true, zoomBounds)
   if (!option) return
   const yTitle = yMetric.value === 'translator' ? 'Translator-Backed Share' : 'Assimilation Rate'
   const granLabel = granularity.value === 'fields' ? 'Fields' : 'Subfields'
+  const zoomNote = zoomBounds
+    ? ` | Zoomed: ${zoomBounds.xMin}–${zoomBounds.xMax} yrs, ${zoomBounds.yMin}–${zoomBounds.yMax}%`
+    : ''
   exportEChartForPrint({
     option,
-    filename: `incose_irritation_quadrants_${granularity.value}_${yMetric.value}_300dpi.png`,
+    filename: `incose_irritation_quadrants_${granularity.value}_${yMetric.value}${zoomBounds ? '_zoomed' : ''}_300dpi.png`,
     width: 1200,
     height: 680,
     pixelRatio: 3,
     title: `INCOSE 2×2 Irritation Typology (${granLabel} — ${yTitle})`,
-    subtitle: `${getActiveScopeSubtitle()} | Plotted: ${flattenedData.value.length} ${granLabel}`
+    subtitle: `${getActiveScopeSubtitle()} | Plotted: ${flattenedData.value.length} ${granLabel}${zoomNote}`
   })
 }
 
 const exportHorizonForPrint = () => {
-  const option = buildHorizonOption(true)
+  const option = buildHorizonOption(true, true)
   if (!option) return
   const granLabel = absentGranularity.value === 'subfields' ? 'Subfields (252)' : 'Fields (26)'
   exportEChartForPrint({
@@ -2478,4 +2829,93 @@ onBeforeUnmount(() => {
   font-size: 8.5px;
   opacity: 0.85;
 }
+
+.zoom-controls {
+  gap: 4px;
+}
+
+.zoom-btn {
+  min-width: 24px;
+  padding: 3px 6px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.zoom-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.chart-header-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chart-header-hint {
+  font-size: 9.5px;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #777;
+  font-style: italic;
+}
+
+.horizon-chart-card.is-paper-mode .chart-header-hint {
+  color: #475569;
+}
+
+.absent-section.section-active {
+  border-left: 3px solid #5cb85c;
+}
+
+.title-success {
+  color: #5cb85c;
+}
+
+.segment-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clear-segment-btn {
+  padding: 2px 8px;
+  font-size: 9.5px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 3px;
+  color: #ddd;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.clear-segment-btn:hover {
+  background: rgba(0, 191, 255, 0.22);
+  border-color: #00bfff;
+  color: #fff;
+}
+
+.segment-empty {
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+  padding: 6px 0;
+}
+
+.tag-active {
+  background: rgba(92, 184, 92, 0.14);
+  border: 1px solid rgba(92, 184, 92, 0.4);
+  color: #5cb85c;
+}
+
+.tag-active.tag-clickable:hover {
+  background: rgba(92, 184, 92, 0.32);
+  border-color: #5cb85c;
+  color: #fff;
+}
+
 </style>
